@@ -6,6 +6,7 @@ import { DocumentTextIcon, ShieldCheckIcon, StarIcon, ArrowUpTrayIcon } from "@h
 import KpiTile from "@/components/KpiTile"
 import FrameworkCard from "@/components/FrameworkCard"
 import FrameworkComparisonTable from "@/components/FrameworkComparisonTable"
+import UnmappedControlsTable from "@/components/UnmappedControlsTable"
 import UploadFrameworkModal from "@/components/UploadFrameworkModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useFrameworks, useFrameworkKPIs, setMasterFramework, createFramework } from "@/lib/queries/frameworks"
@@ -124,6 +125,7 @@ export default function FrameworksPage() {
           ))}
         </div>
         <CardSkeleton />
+        <CardSkeleton />
       </div>
     )
   }
@@ -164,6 +166,16 @@ export default function FrameworksPage() {
         {/* Framework Comparison Table */}
         {masterFramework && allControls && mappings && (
           <FrameworkComparisonTable
+            masterFramework={masterFramework}
+            otherFrameworks={otherFrameworks}
+            allControls={allControls}
+            allMappings={mappings}
+          />
+        )}
+
+        {/* Unmapped Controls Table */}
+        {masterFramework && allControls && mappings && (
+          <UnmappedControlsTable
             masterFramework={masterFramework}
             otherFrameworks={otherFrameworks}
             allControls={allControls}
