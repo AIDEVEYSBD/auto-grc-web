@@ -20,16 +20,14 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
     return "#dc2626" // red-600
   }
 
-  // Always show the full circle, even when empty
-  const chartData = [
-    { value: data.value || 0.1, fill: getColor(percentage) }, // Show tiny slice when 0
-    { value: Math.max(data.total - (data.value || 0), 0.1), fill: "#e5e7eb" }, // gray-200
-  ]
-
-  // For completely empty charts, show full gray circle
-  const emptyChartData = [{ value: 100, fill: "#e5e7eb" }]
-
-  const displayData = data.total === 0 || (data.value === 0 && data.total > 0) ? emptyChartData : chartData
+  // Always create data that will render a visible circle
+  const chartData =
+    data.total === 0 || data.value === 0
+      ? [{ value: 100, fill: "#e5e7eb" }] // Full gray circle when empty or no data
+      : [
+          { value: data.value, fill: getColor(percentage) },
+          { value: data.total - data.value, fill: "#e5e7eb" },
+        ]
 
   return (
     <div className={`flex flex-col items-center ${className}`}>
@@ -37,7 +35,7 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={displayData}
+              data={chartData}
               cx="50%"
               cy="50%"
               innerRadius={size * 0.35}
@@ -47,7 +45,7 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
               dataKey="value"
               stroke="none"
             >
-              {displayData.map((entry, index) => (
+              {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
             </Pie>
