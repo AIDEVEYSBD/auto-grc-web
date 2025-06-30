@@ -51,7 +51,7 @@ export interface Integration {
   id: string
   category: string
   name: string
-  status: "connected" | "warning" | "disconnected"
+  status: "connected" | "warning" | "disconnected" | "pending"
   last_sync: string
   datapoints: number
   data?: any // Store the actual integration data

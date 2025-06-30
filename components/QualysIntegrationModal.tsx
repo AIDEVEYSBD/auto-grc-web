@@ -1,16 +1,16 @@
 "use client"
 
-import { Fragment, useState } from "react"
+import { Fragment, useState, useEffect } from "react"
 import { Dialog, Transition } from "@headlessui/react"
-import { XMarkIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline"
+import { XMarkIcon, ExclamationTriangleIcon, InformationCircleIcon } from "@heroicons/react/24/outline"
 
 interface QualysIntegrationModalProps {
   isOpen: boolean
   onClose: () => void
-  onDataReceived: (data: any) => void
+  onScanInitiated: (scanDetails: { host: string; email: string; initialData: any }) => void
 }
 
-export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived }: QualysIntegrationModalProps) {
+export default function QualysIntegrationModal({ isOpen, onClose, onScanInitiated }: QualysIntegrationModalProps) {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -20,109 +20,86 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [needsRegistration, setNeedsRegistration] = useState(false)
+  const [statusMessage, setStatusMessage] = useState("")
+
+  useEffect(() => {
+    if (isOpen) {
+      try {
+        const savedDetails = localStorage.getItem("qualysRegDetails")
+        if (savedDetails) {
+          const parsedDetails = JSON.parse(savedDetails)
+          setFormData((prev) => ({ ...prev, ...parsedDetails }))
+        }
+      } catch (e) {
+        console.error("Failed to parse Qualys registration details from localStorage", e)
+      }
+    }
+  }, [isOpen])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
     setError(null)
   }
 
-  const handleRegister = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.organization) {
-      setError("All registration fields are required")
+  const handleInstall = async () => {
+    const { firstName, lastName, email, organization, testDomain } = formData
+    if (!firstName || !lastName || !email || !organization || !testDomain) {
+      setError("All fields are required.")
       return
     }
+
+    const cleanDomain = testDomain.replace(/^https?:\/\//, "").replace(/\/$/, "")
 
     setIsLoading(true)
     setError(null)
 
     try {
-      const response = await fetch("/api/qualys", {
+      // Step 1: Register if needed
+      setStatusMessage("Checking registration with Qualys SSL Labs...")
+      const regResponse = await fetch("/api/qualys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          organization: formData.organization,
-        }),
+        body: JSON.stringify({ firstName, lastName, email, organization }),
       })
 
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || "Registration failed")
+      const regResult = await regResponse.json()
+      if (!regResponse.ok && regResult.status !== "already_registered") {
+        throw new Error(regResult.details?.errors?.[0]?.message || regResult.error || "Registration failed")
       }
 
-      setNeedsRegistration(false)
-      // After successful registration, proceed with SSL analysis
-      await handleInstall()
-    } catch (err: any) {
-      setError(err.message || "Registration failed")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+      setStatusMessage("Registration confirmed. Saving details...")
+      localStorage.setItem("qualysRegDetails", JSON.stringify({ firstName, lastName, email, organization }))
 
-  const handleInstall = async () => {
-    if (!formData.testDomain) {
-      setError("Test domain is required")
-      return
-    }
-
-    if (!formData.email) {
-      setError("Email is required")
-      return
-    }
-
-    // Clean the domain (remove protocol if present)
-    const cleanDomain = formData.testDomain.replace(/^https?:\/\//, "").replace(/\/$/, "")
-
-    setIsLoading(true)
-    setError(null)
-
-    try {
+      // Step 2: Initiate scan
+      setStatusMessage(`Initiating scan for ${cleanDomain}...`)
       const params = new URLSearchParams({
         host: cleanDomain,
         email: formData.email,
         startNew: "on",
       })
+      const scanResponse = await fetch(`/api/qualys?${params}`)
+      const scanResult = await scanResponse.json()
 
-      const response = await fetch(`/api/qualys?${params}`)
-      const result = await response.json()
-
-      if (!response.ok) {
-        if (response.status === 441) {
-          setNeedsRegistration(true)
-          setError("Email not registered with Qualys SSL Labs. Please register first.")
-          return
-        }
-        throw new Error(result.error || "SSL analysis failed")
+      if (!scanResponse.ok) {
+        throw new Error(scanResult.error || "Failed to start scan")
       }
 
-      // Add the host to the result for reference
-      result.host = cleanDomain
-
-      // Pass the data to parent component
-      onDataReceived(result)
-      onClose()
+      // Step 3: Callback and close
+      onScanInitiated({ host: cleanDomain, email: formData.email, initialData: scanResult })
+      handleClose()
     } catch (err: any) {
-      setError(err.message || "SSL analysis failed")
+      setError(err.message)
     } finally {
       setIsLoading(false)
+      setStatusMessage("")
     }
   }
 
   const handleClose = () => {
-    setFormData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      organization: "",
-      testDomain: "",
-    })
+    // Don't clear form data on close, just reset status
     setError(null)
-    setNeedsRegistration(false)
+    setStatusMessage("")
+    setIsLoading(false)
     onClose()
   }
 
@@ -177,9 +154,6 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
                       placeholder="Enter your first name"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Required for Qualys SSL Labs registration
-                    </p>
                   </div>
 
                   <div>
@@ -193,9 +167,6 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
                       placeholder="Enter your last name"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Required for Qualys SSL Labs registration
-                    </p>
                   </div>
 
                   <div>
@@ -211,7 +182,7 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
                     />
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-2 rounded mt-1">
                       <p className="text-xs text-blue-700 dark:text-blue-300">
-                        Must be a business email (no Gmail, Yahoo, etc.)
+                        Must be a business email (no Gmail, Yahoo, etc.) for registration.
                       </p>
                     </div>
                   </div>
@@ -227,12 +198,11 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
                       placeholder="Enter your organization name"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Your company or organization name</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Test Domain <span className="text-red-500">*</span>
+                      Domain to Scan <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -255,6 +225,15 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
                     </div>
                   )}
 
+                  {statusMessage && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <InformationCircleIcon className="h-5 w-5 text-blue-500" />
+                        <p className="text-sm text-blue-600 dark:text-blue-400">{statusMessage}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex gap-3 pt-4">
                     <button
                       onClick={handleClose}
@@ -262,23 +241,13 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
                     >
                       Cancel
                     </button>
-                    {needsRegistration ? (
-                      <button
-                        onClick={handleRegister}
-                        disabled={isLoading}
-                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isLoading ? "Registering..." : "Register & Install"}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleInstall}
-                        disabled={isLoading}
-                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isLoading ? "Installing..." : "Install"}
-                      </button>
-                    )}
+                    <button
+                      onClick={handleInstall}
+                      disabled={isLoading}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoading ? "Working..." : "Start Scan"}
+                    </button>
                   </div>
                 </div>
               </Dialog.Panel>

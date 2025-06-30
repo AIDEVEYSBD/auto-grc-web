@@ -4,23 +4,12 @@ import { Fragment, useState } from "react"
 import { Dialog, Transition } from "@headlessui/react"
 import { XMarkIcon, MagnifyingGlassIcon, ChevronDownIcon, StarIcon } from "@heroicons/react/24/outline"
 import QualysIntegrationModal from "./QualysIntegrationModal"
-import QualysDataSelectionModal from "./QualysDataSelectionModal"
+import type { Integration } from "@/types"
 
 interface MarketplaceModalProps {
   isOpen: boolean
   onClose: () => void
   onIntegrationAdded: (integration: Integration) => void
-}
-
-interface Integration {
-  id: string
-  category: string
-  name: string
-  status: string
-  last_sync: string
-  datapoints: number
-  data: any
-  selectedFields: string[]
 }
 
 const mockIntegrations = [
@@ -109,8 +98,6 @@ export default function MarketplaceModal({ isOpen, onClose, onIntegrationAdded }
   const [selectedCategory, setSelectedCategory] = useState("All Categories")
   const [selectedPricing, setSelectedPricing] = useState("All Pricing")
   const [isQualysModalOpen, setIsQualysModalOpen] = useState(false)
-  const [isDataSelectionOpen, setIsDataSelectionOpen] = useState(false)
-  const [qualysData, setQualysData] = useState<any>(null)
 
   const filteredIntegrations = mockIntegrations.filter((integration) => {
     const matchesSearch =
@@ -137,67 +124,34 @@ export default function MarketplaceModal({ isOpen, onClose, onIntegrationAdded }
     }
   }
 
-  const handleQualysDataReceived = (data: any) => {
-    setQualysData(data)
-    setIsDataSelectionOpen(true)
-  }
-
-  const handleDataSelectionSave = (selectedFields: string[]) => {
-    if (!qualysData) return
-
-    // Filter the data to only include selected fields
-    const filteredData = filterDataByFields(qualysData, selectedFields)
-
-    // Create new integration entry
+  const handleScanInitiated = ({
+    host,
+    email,
+    initialData,
+  }: {
+    host: string
+    email: string
+    initialData: any
+  }) => {
     const newIntegration: Integration = {
       id: `qualys-ssl-${Date.now()}`,
       category: "SSL/TLS Analysis",
-      name: `Qualys SSL Labs - ${qualysData.host}`,
-      status: "connected",
+      name: `Qualys SSL Labs - ${host}`,
+      status: "pending",
       last_sync: new Date().toISOString(),
-      datapoints: selectedFields.length,
-      data: filteredData,
-      selectedFields: selectedFields,
+      datapoints: 0,
+      data: {
+        host,
+        email,
+        scanStatus: initialData.status,
+        statusMessage: initialData.statusMessage,
+      },
+      selectedFields: [],
     }
 
-    // Add to integrations
     onIntegrationAdded(newIntegration)
-
-    // Close modals
-    setIsDataSelectionOpen(false)
-    onClose()
-  }
-
-  // Helper function to filter data by selected fields
-  const filterDataByFields = (data: any, selectedFields: string[]) => {
-    const filtered: any = {}
-
-    selectedFields.forEach((fieldPath) => {
-      const parts = fieldPath.split(".")
-      let sourceValue = data
-      let targetObj = filtered
-
-      // Navigate to the value in source data
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (sourceValue && typeof sourceValue === "object") {
-          sourceValue = sourceValue[parts[i]]
-
-          // Create nested structure in target
-          if (!targetObj[parts[i]]) {
-            targetObj[parts[i]] = {}
-          }
-          targetObj = targetObj[parts[i]]
-        }
-      }
-
-      // Set the final value
-      if (sourceValue && typeof sourceValue === "object") {
-        const finalKey = parts[parts.length - 1]
-        targetObj[finalKey] = sourceValue[finalKey]
-      }
-    })
-
-    return filtered
+    setIsQualysModalOpen(false)
+    onClose() // Close the main marketplace modal as well
   }
 
   const getPricingColor = (pricing: string) => {
@@ -407,15 +361,7 @@ export default function MarketplaceModal({ isOpen, onClose, onIntegrationAdded }
       <QualysIntegrationModal
         isOpen={isQualysModalOpen}
         onClose={() => setIsQualysModalOpen(false)}
-        onDataReceived={handleQualysDataReceived}
-      />
-
-      {/* Data Selection Modal */}
-      <QualysDataSelectionModal
-        isOpen={isDataSelectionOpen}
-        onClose={() => setIsDataSelectionOpen(false)}
-        data={qualysData}
-        onSave={handleDataSelectionSave}
+        onScanInitiated={handleScanInitiated}
       />
     </>
   )

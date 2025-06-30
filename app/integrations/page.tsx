@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import IntegrationCard from "@/components/IntegrationCard"
@@ -12,20 +12,28 @@ import type { KPIData, Integration } from "@/types"
 export default function IntegrationsPage() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(["Cloud Security"])
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
-  const [customIntegrations, setCustomIntegrations] = useState<Integration[]>([])
+  const { data: initialIntegrations, isLoading } = useIntegrations()
+  const [allIntegrations, setAllIntegrations] = useState<Integration[]>([])
 
-  const { data: integrations, isLoading } = useIntegrations()
+  useEffect(() => {
+    if (initialIntegrations) {
+      setAllIntegrations(initialIntegrations)
+    }
+  }, [initialIntegrations])
 
-  // Combine original integrations with custom ones
-  const allIntegrations = useMemo(() => {
-    return [...(integrations || []), ...customIntegrations]
-  }, [integrations, customIntegrations])
+  const handleIntegrationAdded = useCallback((newIntegration: Integration) => {
+    setAllIntegrations((prev) => [...prev, newIntegration])
+  }, [])
+
+  const handleUpdateIntegration = useCallback((updatedIntegration: Integration) => {
+    setAllIntegrations((prev) => prev.map((i) => (i.id === updatedIntegration.id ? updatedIntegration : i)))
+  }, [])
 
   // Calculate KPIs with combined data
   const kpis = useMemo(() => {
     const categories = new Set(allIntegrations?.map((i) => i.category)).size || 0
     const connected = allIntegrations?.filter((i) => i.status === "connected").length || 0
-    const needAttention = allIntegrations?.filter((i) => i.status !== "connected").length || 0
+    const needAttention = allIntegrations?.filter((i) => i.status !== "connected" && i.status !== "pending").length || 0
     const totalDatapoints = allIntegrations?.reduce((sum, i) => sum + i.datapoints, 0) || 0
 
     return {
@@ -89,11 +97,7 @@ export default function IntegrationsPage() {
     )
   }, [])
 
-  const handleIntegrationAdded = useCallback((newIntegration: Integration) => {
-    setCustomIntegrations((prev) => [...prev, newIntegration])
-  }, [])
-
-  if (isLoading) {
+  if (isLoading && !allIntegrations.length) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -154,6 +158,10 @@ export default function IntegrationsPage() {
 
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                  <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
+                  {categoryIntegrations.filter((i) => i.status === "pending").length} pending
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                   {categoryIntegrations.filter((i) => i.status === "connected").length} connected
                 </div>
@@ -172,7 +180,11 @@ export default function IntegrationsPage() {
               <div className="px-6 pb-6 border-t border-gray-200 dark:border-gray-700">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                   {categoryIntegrations.map((integration) => (
-                    <IntegrationCard key={integration.id} integration={integration} />
+                    <IntegrationCard
+                      key={integration.id}
+                      integration={integration}
+                      onUpdateIntegration={handleUpdateIntegration}
+                    />
                   ))}
                 </div>
               </div>
