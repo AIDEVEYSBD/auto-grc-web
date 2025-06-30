@@ -1,212 +1,192 @@
 "use client"
 
 import type React from "react"
-
-import { Fragment, useState, useMemo } from "react"
-import { Dialog, Transition } from "@headlessui/react"
-import { XMarkIcon, MagnifyingGlassIcon, FunnelIcon } from "@heroicons/react/24/outline"
+import { useState, useMemo } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  ShieldCheckIcon,
-  EyeIcon,
-  BugAntIcon,
-  UserGroupIcon,
-  CloudIcon,
-  CpuChipIcon,
-  DocumentMagnifyingGlassIcon,
-  KeyIcon,
-} from "@heroicons/react/24/solid"
+  Search,
+  Plus,
+  Shield,
+  Eye,
+  Lock,
+  Zap,
+  Database,
+  Cloud,
+  Network,
+  Bug,
+  FileText,
+  AlertTriangle,
+  Settings,
+  Monitor,
+  Key,
+  Wifi,
+  Server,
+  Activity,
+} from "lucide-react"
 import type { Integration } from "@/types"
 
 interface MarketplaceModalProps {
   isOpen: boolean
   onClose: () => void
-  onAddTool: (tool: Integration) => void
   integrations: Integration[]
 }
 
-// Category icons mapping
 const categoryIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  SIEM: EyeIcon,
-  "EDR / Endpoint Protection": ShieldCheckIcon,
-  "Vulnerability Management": BugAntIcon,
-  "Identity Management": UserGroupIcon,
-  "Cloud Security": CloudIcon,
-  "Network Security": CpuChipIcon,
-  Compliance: DocumentMagnifyingGlassIcon,
-  Encryption: KeyIcon,
+  SIEM: Shield,
+  EDR: Eye,
+  "Endpoint Protection": Lock,
+  "Vulnerability Management": Bug,
+  "Identity Management": Key,
+  "Network Security": Network,
+  "Cloud Security": Cloud,
+  "Data Protection": Database,
+  Compliance: FileText,
+  "Threat Intelligence": AlertTriangle,
+  "Security Orchestration": Settings,
+  Monitoring: Monitor,
+  Firewall: Wifi,
+  Infrastructure: Server,
+  Analytics: Activity,
+  Default: Zap,
 }
 
-export default function MarketplaceModal({ isOpen, onClose, onAddTool, integrations }: MarketplaceModalProps) {
-  const [searchQuery, setSearchQuery] = useState("")
+export default function MarketplaceModal({ isOpen, onClose, integrations }: MarketplaceModalProps) {
+  const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
-  // Filter integrations to show only those that are NOT connected (i.e., available in marketplace)
-  const availableMarketplaceTools = useMemo(() => integrations.filter((tool) => !tool["is-connected"]), [integrations])
+  // Filter to show only disconnected tools (marketplace tools)
+  const marketplaceTools = integrations.filter((tool) => !tool["is-connected"])
 
-  // Get unique categories from available tools
-  const availableCategories = useMemo(() => {
-    const categories = Array.from(new Set(availableMarketplaceTools.map((tool) => tool.category)))
-    return categories.sort()
-  }, [availableMarketplaceTools])
+  // Get unique categories for filter dropdown
+  const categories = useMemo(() => {
+    const uniqueCategories = Array.from(new Set(marketplaceTools.map((tool) => tool.category)))
+    return uniqueCategories.sort()
+  }, [marketplaceTools])
 
+  // Filter tools based on search and category
   const filteredTools = useMemo(() => {
-    let filtered = availableMarketplaceTools
+    return marketplaceTools.filter((tool) => {
+      const matchesSearch =
+        tool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        tool.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesCategory = selectedCategory === "all" || tool.category === selectedCategory
+      return matchesSearch && matchesCategory
+    })
+  }, [marketplaceTools, searchTerm, selectedCategory])
 
-    // Apply category filter
-    if (selectedCategory !== "all") {
-      filtered = filtered.filter((tool) => tool.category === selectedCategory)
-    }
+  const handleAddTool = (toolId: string) => {
+    // Placeholder for add tool functionality
+    console.log("Adding tool:", toolId)
+    // TODO: Implement server action to update is-connected to true
+  }
 
-    // Apply search query
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (tool) =>
-          tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (tool.description && tool.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-          tool.category.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    }
-
-    return filtered
-  }, [searchQuery, selectedCategory, availableMarketplaceTools])
-
-  const getCategoryIcon = (category: string) => {
-    const IconComponent = categoryIcons[category] || ShieldCheckIcon
-    return <IconComponent className="h-5 w-5" />
+  const getIconForCategory = (category: string) => {
+    const IconComponent = categoryIcons[category] || categoryIcons["Default"]
+    return IconComponent
   }
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-        </Transition.Child>
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
-            >
-              <Dialog.Panel className="w-full max-w-6xl transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 text-left align-middle shadow-xl transition-all">
-                <div className="flex items-start justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                  <div>
-                    <Dialog.Title as="h3" className="text-xl font-semibold text-gray-900 dark:text-white">
-                      Security Tool Marketplace
-                    </Dialog.Title>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      Discover and integrate cybersecurity tools to enhance your security posture
-                    </p>
-                  </div>
-                  <button
-                    onClick={onClose}
-                    className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-6xl w-full h-[80vh] flex flex-col z-50 bg-white/95 backdrop-blur-sm border-0 shadow-2xl">
+        <DialogHeader className="border-b pb-4">
+          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Security Tools Marketplace
+          </DialogTitle>
+          <p className="text-gray-600 mt-2">Discover and connect security tools to enhance your compliance posture</p>
+        </DialogHeader>
+
+        {/* Search and Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-4 py-4 border-b">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Search tools..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Tools Grid */}
+        <div className="flex-1 overflow-y-auto">
+          {filteredTools.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-1">
+              {filteredTools.map((tool) => {
+                const IconComponent = getIconForCategory(tool.category)
+                return (
+                  <div
+                    key={tool.id}
+                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200 hover:border-blue-300"
                   >
-                    <XMarkIcon className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <div className="p-6">
-                  <div className="flex flex-col lg:flex-row gap-4 mb-6">
-                    <div className="relative flex-1">
-                      <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search tools, vendors, or features..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <FunnelIcon className="h-5 w-5 text-gray-400" />
-                      <select
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="all">All Categories</option>
-                        {availableCategories.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto p-1">
-                    {filteredTools.length > 0 ? (
-                      filteredTools.map((tool) => (
-                        <div key={tool.id} className="glass-card p-4 flex flex-col hover:shadow-lg transition-shadow">
-                          <div className="flex items-start gap-4 mb-3">
-                            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white">
-                              {getCategoryIcon(tool.category)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-gray-900 dark:text-white truncate">{tool.name}</h4>
-                              <div className="flex items-center gap-1 mt-1">
-                                {getCategoryIcon(tool.category)}
-                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{tool.category}</p>
-                              </div>
-                            </div>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400 flex-grow mb-4 line-clamp-3">
-                            {tool.description ||
-                              `A comprehensive ${tool.category.toLowerCase()} solution for enhanced security management.`}
-                          </p>
-                          <div className="flex justify-end">
-                            <button
-                              onClick={() => onAddTool(tool)}
-                              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-sm"
-                            >
-                              Add Tool
-                            </button>
-                          </div>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                          <IconComponent className="h-5 w-5 text-white" />
                         </div>
-                      ))
-                    ) : (
-                      <div className="col-span-full text-center py-12 text-gray-500 dark:text-gray-400">
-                        <div className="flex flex-col items-center gap-3">
-                          <MagnifyingGlassIcon className="h-12 w-12 text-gray-300 dark:text-gray-600" />
-                          <div>
-                            <h3 className="font-medium text-gray-900 dark:text-white mb-1">No tools found</h3>
-                            <p className="text-sm">
-                              {searchQuery || selectedCategory !== "all"
-                                ? "Try adjusting your search or filter criteria."
-                                : "All available tools have been connected."}
-                            </p>
-                          </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{tool.name}</h3>
+                          <Badge variant="secondary" className="text-xs">
+                            {tool.category}
+                          </Badge>
                         </div>
                       </div>
-                    )}
-                  </div>
-
-                  {filteredTools.length > 0 && (
-                    <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-                        Showing {filteredTools.length} of {availableMarketplaceTools.length} available tools
-                      </p>
                     </div>
-                  )}
-                </div>
-              </Dialog.Panel>
-            </Transition.Child>
-          </div>
+
+                    {tool.description && <p className="text-sm text-gray-600 mb-4 line-clamp-2">{tool.description}</p>}
+
+                    <Button
+                      onClick={() => handleAddTool(tool.id)}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                      size="sm"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Tool
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <Search className="h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No tools found</h3>
+              <p className="text-gray-600">
+                {searchTerm || selectedCategory !== "all"
+                  ? "Try adjusting your search or filter criteria"
+                  : "No marketplace tools available at the moment"}
+              </p>
+            </div>
+          )}
         </div>
-      </Dialog>
-    </Transition>
+
+        {/* Footer */}
+        <div className="border-t pt-4 flex justify-between items-center text-sm text-gray-600">
+          <span>
+            Showing {filteredTools.length} of {marketplaceTools.length} tools
+          </span>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

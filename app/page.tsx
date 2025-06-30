@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import KpiTile from "@/components/KpiTile"
 import DonutStrip from "@/components/DonutStrip"
 import ApplicationsFrameworkTable from "@/components/ApplicationsFrameworkTable"
@@ -26,7 +27,14 @@ export default function OverviewPage() {
   const totalApps = applications?.length || 0
   const totalControls = frameworkKPIs.totalControls
   const failedControls = assessments?.filter((a) => a.status === "fail").length || 0
-  const overallCompliance = totalControls > 0 ? Math.round(((totalControls - failedControls) / totalControls) * 100) : 0
+
+  // Calculate overall compliance as average of all applications' compliance scores
+  const overallCompliance = useMemo(() => {
+    if (!applications || applications.length === 0) return 0
+
+    const totalScore = applications.reduce((sum, app) => sum + (app.compliance_score || 0), 0)
+    return Math.round(totalScore / applications.length)
+  }, [applications])
 
   const kpiData: KPIData[] = [
     {
@@ -55,7 +63,7 @@ export default function OverviewPage() {
     },
     {
       label: "Overall Compliance",
-      value: totalControls > 0 ? `${overallCompliance}%` : "-",
+      value: totalApps > 0 ? `${overallCompliance}%` : "-",
       icon: ChartBarIcon,
       color: overallCompliance >= 80 ? "green" : overallCompliance >= 40 ? "yellow" : "red",
     },
