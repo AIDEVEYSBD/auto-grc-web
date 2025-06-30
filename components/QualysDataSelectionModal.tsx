@@ -12,8 +12,6 @@ interface QualysDataSelectionModalProps {
 }
 
 export default function QualysDataSelectionModal({ isOpen, onClose, data, onSave }: QualysDataSelectionModalProps) {
-  const [selectedFields, setSelectedFields] = useState<Set<string>>(() => new Set(availableFields))
-
   // Extract all possible field paths from the data
   const availableFields = useMemo(() => {
     const extractFields = (obj: any, prefix = ""): string[] => {
@@ -40,12 +38,15 @@ export default function QualysDataSelectionModal({ isOpen, onClose, data, onSave
     return extractFields(data).sort()
   }, [data])
 
-  // Initialize with all fields selected
+  // Initialise selectedFields AFTER availableFields is defined
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
+
+  // Ensure all fields are selected by default each time data changes
   useEffect(() => {
-    if (availableFields.length > 0 && selectedFields.size === 0) {
+    if (availableFields.length) {
       setSelectedFields(new Set(availableFields))
     }
-  }, [availableFields])
+  }, [availableFields, isOpen])
 
   const toggleField = (field: string) => {
     const newSelected = new Set(selectedFields)
