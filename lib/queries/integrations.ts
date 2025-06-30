@@ -5,11 +5,17 @@ import { supabase } from "@/lib/supabase"
 import { useMemo } from "react"
 import type { Integration } from "@/types"
 
-// Fetcher function for SWR
-const fetcher = async () => {
+// Fetcher function for SWR - fetches all integrations from the DB
+const fetcher = async (key: string) => {
+  console.log("Fetching integrations from Supabase...")
   const { data, error } = await supabase.from("integrations").select("*").order("name", { ascending: true })
 
-  if (error) throw error
+  if (error) {
+    console.error("Supabase fetch error:", error)
+    throw error
+  }
+
+  console.log("Fetched data:", data) // This will show you what data is being returned
   return data as Integration[]
 }
 
@@ -17,7 +23,7 @@ export function useIntegrations() {
   const { data, error, isLoading, mutate } = useSWR("integrations", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    refreshInterval: 0,
+    refreshInterval: 0, // Disable automatic refreshing
   })
 
   return {
@@ -30,44 +36,18 @@ export function useIntegrations() {
 
 export function useIntegrationKPIs(integrations: Integration[]) {
   return useMemo(() => {
-    if (!integrations || integrations.length === 0) {
-      return {
-        categories: 0,
-        connected: 0,
-        needAttention: 0,
-        totalDatapoints: 0,
-      }
+    if (!integrations) {
+      return { categories: 0, connected: 0, needAttention: 0, totalDatapoints: 0 }
     }
 
-    const categories = new Set(integrations.map((i) => i.category)).size
-    const connected = integrations.filter((i) => i.is_connected === true).length
-    const needAttention = integrations.filter((i) => i.is_connected === false).length
-    // Since we don't have datapoints in the schema, we'll use linked_controls count as a proxy
+    const connectedIntegrations = integrations.filter((i) => i.is_connected === true)
+    const disconnectedIntegrations = integrations.filter((i) => i.is_connected === false)
+
+    const categories = new Set(connectedIntegrations.map((i) => i.category)).size
+    const connected = connectedIntegrations.length
+    const needAttention = disconnectedIntegrations.length
     const totalDatapoints = integrations.filter((i) => i.linked_controls !== null).length
 
-    return {
-      categories,
-      connected,
-      needAttention,
-      totalDatapoints,
-    }
-  }, [integrations])
-}
-
-export function useIntegrationsByCategory(integrations: Integration[]) {
-  return useMemo(() => {
-    if (!integrations || integrations.length === 0) return {}
-
-    return integrations.reduce(
-      (acc, integration) => {
-        const category = integration.category
-        if (!acc[category]) {
-          acc[category] = []
-        }
-        acc[category].push(integration)
-        return acc
-      },
-      {} as Record<string, Integration[]>,
-    )
+    return { categories, connected, needAttention, totalDatapoints }
   }, [integrations])
 }

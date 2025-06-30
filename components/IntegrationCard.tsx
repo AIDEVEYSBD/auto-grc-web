@@ -1,7 +1,7 @@
 "use client"
 
-import { XCircleIcon, ArrowPathIcon, EllipsisVerticalIcon, PlusIcon } from "@heroicons/react/24/outline"
-import { CheckCircleIcon as CheckCircleIconSolid } from "@heroicons/react/24/solid"
+import { ArrowPathIcon, EllipsisVerticalIcon, PlusIcon } from "@heroicons/react/24/outline"
+import { CheckCircleIcon as CheckCircleIconSolid, XCircleIcon } from "@heroicons/react/24/solid"
 import { memo } from "react"
 import type { Integration } from "@/types"
 
@@ -29,40 +29,22 @@ function IntegrationCard({ integration, isAddButton = false, onAddClick, classNa
 
   if (!integration) return null
 
+  const isConnected = integration.is_connected === true
+
   const getStatusIcon = () => {
-    if (integration.is_connected) {
-      return <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
-    } else {
-      return <XCircleIcon className="h-5 w-5 text-red-500" />
-    }
+    return isConnected ? (
+      <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
+    ) : (
+      <XCircleIcon className="h-5 w-5 text-red-500" />
+    )
   }
 
-  const getStatusText = () => {
-    return integration.is_connected ? "Connected" : "Disconnected"
-  }
+  const getStatusText = () => (isConnected ? "Connected" : "Disconnected")
 
-  const getStatusColor = () => {
-    if (integration.is_connected) {
-      return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-    } else {
-      return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-    }
-  }
-
-  const getDescription = () => {
-    // Generate description based on category
-    const descriptions: Record<string, string> = {
-      SIEM: "Security Information and Event Management platform",
-      EDR: "Endpoint Detection and Response solution",
-      "Endpoint Protection": "Endpoint security and protection platform",
-      "Vulnerability Management": "Vulnerability assessment and management tool",
-      "Identity Management": "Identity and access management solution",
-      "Cloud Security": "Cloud security posture management platform",
-      "Network Security": "Network security monitoring and protection",
-      Compliance: "Compliance management and reporting tool",
-    }
-    return descriptions[integration.category] || `${integration.category} security tool`
-  }
+  const getStatusColor = () =>
+    isConnected
+      ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+      : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
 
   return (
     <div className={`glass-card p-6 hover:shadow-lg transition-shadow ${className}`}>
@@ -71,10 +53,11 @@ function IntegrationCard({ integration, isAddButton = false, onAddClick, classNa
           {getStatusIcon()}
           <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-gray-900 dark:text-white text-base mb-1">{integration.name}</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{getDescription()}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+              {integration.description || `${integration.category} integration`}
+            </p>
           </div>
         </div>
-
         <div className="flex items-center gap-2 ml-4">
           <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor()}`}>{getStatusText()}</span>
           <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">

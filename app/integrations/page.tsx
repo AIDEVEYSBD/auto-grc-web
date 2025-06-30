@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useMemo, useCallback } from "react"
 import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import {
@@ -13,210 +11,180 @@ import {
 import KpiTile from "@/components/KpiTile"
 import IntegrationCard from "@/components/IntegrationCard"
 import MarketplaceModal from "@/components/MarketplaceModal"
+import RegistrationModal from "@/components/RegistrationModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
-import { useIntegrations, useIntegrationKPIs, useIntegrationsByCategory } from "@/lib/queries/integrations"
-import type { KPIData } from "@/types"
-
-type FilterType = "all" | "connected" | "disconnected"
+import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
+import type { KPIData, MarketplaceTool, Integration } from "@/types"
 
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [activeFilter, setActiveFilter] = useState<FilterType>("all")
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false)
+  const [selectedTool, setSelectedTool] = useState<MarketplaceTool | null>(null)
 
-  const { data: integrations, isLoading } = useIntegrations()
-  const kpis = useIntegrationKPIs(integrations)
-  const integrationsByCategory = useIntegrationsByCategory(integrations)
+  const { data: allIntegrations, isLoading, error } = useIntegrations()
+  const kpis = useIntegrationKPIs(allIntegrations)
+
+  const connectedIntegrations = useMemo(() => allIntegrations.filter((i) => i.is_connected === true), [allIntegrations])
+
+  const integrationsByCategory = useMemo(() => {
+    return connectedIntegrations.reduce(
+      (acc, integration) => {
+        const category = integration.category
+        if (!acc[category]) acc[category] = []
+        acc[category].push(integration)
+        return acc
+      },
+      {} as Record<string, Integration[]>,
+    )
+  }, [connectedIntegrations])
+
+  const filteredIntegrationsByCategory = useMemo(() => {
+    if (!searchQuery) return integrationsByCategory
+    const lowercasedQuery = searchQuery.toLowerCase()
+    const filtered: Record<string, Integration[]> = {}
+    for (const category in integrationsByCategory) {
+      const filteredIntegrations = integrationsByCategory[category].filter(
+        (integration) =>
+          integration.name.toLowerCase().includes(lowercasedQuery) ||
+          integration.category.toLowerCase().includes(lowercasedQuery),
+      )
+      if (filteredIntegrations.length > 0) {
+        filtered[category] = filteredIntegrations
+      }
+    }
+    return filtered
+  }, [integrationsByCategory, searchQuery])
 
   const kpiData: KPIData[] = useMemo(
     () => [
-      {
-        label: "Tool Categories",
-        value: kpis.categories,
-        icon: WrenchScrewdriverIcon,
-        color: "blue",
-      },
-      {
-        label: "Connected Tools",
-        value: kpis.connected,
-        icon: CheckCircleIcon,
-        color: "green",
-      },
-      {
-        label: "Need Attention",
-        value: kpis.needAttention,
-        icon: ExclamationTriangleIcon,
-        color: "yellow",
-      },
-      {
-        label: "Data Points",
-        value: kpis.totalDatapoints.toLocaleString(),
-        icon: CircleStackIcon,
-        color: "purple",
-      },
+      { label: "Tool Categories", value: kpis.categories, icon: WrenchScrewdriverIcon, color: "blue" },
+      { label: "Connected Tools", value: kpis.connected, icon: CheckCircleIcon, color: "green" },
+      { label: "Need Attention", value: kpis.needAttention, icon: ExclamationTriangleIcon, color: "yellow" },
+      { label: "Data Points", value: kpis.totalDatapoints.toLocaleString(), icon: CircleStackIcon, color: "purple" },
     ],
     [kpis],
   )
 
-  const filteredIntegrationsByCategory = useMemo(() => {
-    const filtered: Record<string, any[]> = {}
+  const handleOpenMarketplace = useCallback(() => setIsMarketplaceOpen(true), [])
+  const handleCloseMarketplace = useCallback(() => setIsMarketplaceOpen(false), [])
 
-    Object.entries(integrationsByCategory).forEach(([category, categoryIntegrations]) => {
-      let filteredIntegrations = categoryIntegrations
-
-      // Apply search filter
-      if (searchQuery) {
-        filteredIntegrations = filteredIntegrations.filter(
-          (integration) =>
-            integration.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            integration.category.toLowerCase().includes(searchQuery.toLowerCase()),
-        )
-      }
-
-      // Apply status filter
-      if (activeFilter === "connected") {
-        filteredIntegrations = filteredIntegrations.filter((integration) => integration.is_connected === true)
-      } else if (activeFilter === "disconnected") {
-        filteredIntegrations = filteredIntegrations.filter((integration) => integration.is_connected === false)
-      }
-
-      if (filteredIntegrations.length > 0) {
-        filtered[category] = filteredIntegrations
-      }
-    })
-
-    return filtered
-  }, [integrationsByCategory, searchQuery, activeFilter])
-
-  const filterButtons = useMemo(
-    () => [
-      { key: "all" as FilterType, label: "All", count: integrations?.length || 0 },
-      { key: "connected" as FilterType, label: "Connected", count: kpis.connected },
-      { key: "disconnected" as FilterType, label: "Disconnected", count: kpis.needAttention },
-    ],
-    [integrations, kpis.connected, kpis.needAttention],
-  )
-
-  const handleOpenMarketplace = useCallback(() => {
-    setIsMarketplaceOpen(true)
-  }, [])
-
-  const handleCloseMarketplace = useCallback(() => {
+  const handleAddTool = useCallback((tool: MarketplaceTool) => {
+    setSelectedTool(tool)
     setIsMarketplaceOpen(false)
+    setIsRegistrationOpen(true)
   }, [])
 
-  const handleFilterChange = useCallback((filter: FilterType) => {
-    setActiveFilter(filter)
-  }, [])
-
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value)
+  const handleCloseRegistration = useCallback(() => {
+    setIsRegistrationOpen(false)
+    setSelectedTool(null)
+    setIsMarketplaceOpen(true) // Optionally re-open marketplace
   }, [])
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[...Array(4)].map((_, i) => (
             <CardSkeleton key={i} />
           ))}
         </div>
-        <CardSkeleton />
+        <div className="space-y-8 mt-8">
+          <CardSkeleton className="h-24" />
+          <CardSkeleton className="h-24" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-20">
+        <h3 className="text-lg font-medium text-red-600 dark:text-red-400">Failed to load integrations</h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          Please check your network connection and Supabase configuration.
+        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Error: {error.message}</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Security Integrations</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Connect and manage your cybersecurity tools across all categories
-          </p>
+    <>
+      <div className="space-y-6 p-6 pb-20">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Security Integrations</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              Manage your connected cybersecurity tools across all categories
+            </p>
+          </div>
+          <button
+            onClick={handleOpenMarketplace}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg"
+          >
+            <PlusIcon className="h-4 w-4" />
+            Browse Marketplace
+          </button>
         </div>
-        <button
-          onClick={handleOpenMarketplace}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg"
-        >
-          <PlusIcon className="h-4 w-4" />
-          Browse Marketplace
-        </button>
-      </div>
 
-      {/* KPI Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {kpiData.map((kpi, index) => (
-          <KpiTile key={index} data={kpi} />
-        ))}
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {kpiData.map((kpi, index) => (
+            <KpiTile key={index} data={kpi} />
+          ))}
+        </div>
 
-      {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="relative flex-1 max-w-md">
+        <div className="relative max-w-md">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search categories or tools..."
+            placeholder="Search connected tools..."
             value={searchQuery}
-            onChange={handleSearchChange}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
-        <div className="flex gap-2">
-          {filterButtons.map((filter) => (
-            <button
-              key={filter.key}
-              onClick={() => handleFilterChange(filter.key)}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeFilter === filter.key
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
-            >
-              {filter.label}
-              <span
-                className={`px-1.5 py-0.5 rounded text-xs ${
-                  activeFilter === filter.key
-                    ? "bg-blue-500 text-white"
-                    : "bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-400"
-                }`}
+        <div className="space-y-8">
+          {Object.keys(filteredIntegrationsByCategory).length > 0 ? (
+            Object.entries(filteredIntegrationsByCategory).map(([category, integrations]) => (
+              <div key={category}>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide">
+                  {category}
+                </h2>
+                <div className="space-y-4">
+                  {integrations.map((integration) => (
+                    <IntegrationCard key={integration.id} integration={integration} />
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Connected Tools Found</h3>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">
+                Get started by adding a new tool from the marketplace.
+              </p>
+              <button
+                onClick={handleOpenMarketplace}
+                className="mt-4 flex mx-auto items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
               >
-                {filter.count}
-              </span>
-            </button>
-          ))}
+                <PlusIcon className="h-4 w-4" />
+                Browse Marketplace
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Integration Categories */}
-      <div className="space-y-8">
-        {Object.entries(filteredIntegrationsByCategory).map(([category, categoryIntegrations]) => (
-          <div key={category}>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide">
-              {category}
-            </h2>
-            <div className="space-y-4">
-              {categoryIntegrations.map((integration) => (
-                <IntegrationCard key={integration.id} integration={integration} />
-              ))}
-              <IntegrationCard isAddButton onAddClick={handleOpenMarketplace} />
-            </div>
-          </div>
-        ))}
-      </div>
+      <MarketplaceModal
+        isOpen={isMarketplaceOpen}
+        onClose={handleCloseMarketplace}
+        onAddTool={handleAddTool}
+        integrations={allIntegrations}
+      />
 
-      {/* System Status */}
-      <div className="fixed bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">System Status</span>
-        <span className="text-sm text-gray-600 dark:text-gray-400">All systems operational</span>
-      </div>
-
-      {/* Marketplace Modal */}
-      <MarketplaceModal isOpen={isMarketplaceOpen} onClose={handleCloseMarketplace} integrations={integrations} />
-    </div>
+      <RegistrationModal isOpen={isRegistrationOpen} onClose={handleCloseRegistration} tool={selectedTool} />
+    </>
   )
 }
