@@ -1,7 +1,7 @@
 "use client"
 
 import { ArrowPathIcon, EllipsisVerticalIcon, PlusIcon } from "@heroicons/react/24/outline"
-import { CheckCircleIcon as CheckCircleIconSolid, XCircleIcon } from "@heroicons/react/24/solid"
+import { CheckCircleIcon as CheckCircleIconSolid, ExclamationTriangleIcon } from "@heroicons/react/24/solid"
 import { memo } from "react"
 import type { Integration } from "@/types"
 
@@ -32,11 +32,12 @@ function IntegrationCard({ integration, isAddButton = false, onAddClick, classNa
   const isConnected = integration.is_connected === true
 
   const getStatusIcon = () => {
-    return isConnected ? (
-      <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
-    ) : (
-      <XCircleIcon className="h-5 w-5 text-red-500" />
-    )
+    if (isConnected) {
+      return <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
+    } else {
+      // For disconnected tools, we'll use a warning icon as per the screenshot's "Warning" status
+      return <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
+    }
   }
 
   const getStatusText = () => (isConnected ? "Connected" : "Disconnected")
@@ -44,7 +45,7 @@ function IntegrationCard({ integration, isAddButton = false, onAddClick, classNa
   const getStatusColor = () =>
     isConnected
       ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-      : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" // Using yellow for "Disconnected" to match "Warning" in screenshot
 
   return (
     <div className={`glass-card p-6 hover:shadow-lg transition-shadow ${className}`}>

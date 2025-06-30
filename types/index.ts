@@ -5,7 +5,7 @@ export interface Integration {
   name: string
   category: string
   description?: string
-  linked_controls: string | null
+  linked_controls: string | null // This is a UUID, not a count.
   is_connected: boolean
   created_at: string
 }

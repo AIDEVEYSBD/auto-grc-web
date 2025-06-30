@@ -45,7 +45,9 @@ export function useIntegrationKPIs(integrations: Integration[]) {
 
     const categories = new Set(connectedIntegrations.map((i) => i.category)).size
     const connected = connectedIntegrations.length
+    // "Need Attention" refers to disconnected tools
     const needAttention = disconnectedIntegrations.length
+    // "Data Points" refers to the count of integrations that have linked controls (linked_controls is not null)
     const totalDatapoints = integrations.filter((i) => i.linked_controls !== null).length
 
     return { categories, connected, needAttention, totalDatapoints }

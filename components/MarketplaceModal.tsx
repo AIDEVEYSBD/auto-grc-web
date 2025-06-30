@@ -3,74 +3,29 @@
 import { Fragment, useState, useMemo } from "react"
 import { Dialog, Transition } from "@headlessui/react"
 import { XMarkIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
-import { CheckCircleIcon } from "@heroicons/react/24/solid"
-import type { Integration, MarketplaceTool } from "@/types"
+import type { Integration } from "@/types"
 
 interface MarketplaceModalProps {
   isOpen: boolean
   onClose: () => void
-  onAddTool: (tool: MarketplaceTool) => void
-  integrations: Integration[]
+  onAddTool: (tool: Integration) => void // Changed type to Integration
+  integrations: Integration[] // All integrations from Supabase
 }
-
-// This list represents all tools available in the marketplace catalog.
-const availableMarketplaceTools: Omit<MarketplaceTool, "id">[] = [
-  {
-    name: "Splunk Enterprise",
-    category: "SIEM",
-    description: "Enterprise SIEM platform for security monitoring and analytics.",
-    logo: "/placeholder.svg?width=40&height=40&text=Splunk",
-  },
-  {
-    name: "IBM QRadar",
-    category: "SIEM",
-    description: "IBM's security intelligence platform for threat detection and response.",
-    logo: "/placeholder.svg?width=40&height=40&text=QRadar",
-  },
-  {
-    name: "CrowdStrike Falcon",
-    category: "EDR / Endpoint Protection",
-    description: "Cloud-native endpoint protection platform with threat intelligence.",
-    logo: "/placeholder.svg?width=40&height=40&text=Falcon",
-  },
-  {
-    name: "SentinelOne",
-    category: "EDR / Endpoint Protection",
-    description: "AI-powered endpoint security platform for prevention and detection.",
-    logo: "/placeholder.svg?width=40&height=40&text=S1",
-  },
-  {
-    name: "Nessus",
-    category: "Vulnerability Management",
-    description: "The #1 vulnerability assessment solution for security practitioners.",
-    logo: "/placeholder.svg?width=40&height=40&text=Nessus",
-  },
-  {
-    name: "Okta",
-    category: "Identity Management",
-    description: "Identity and access management to secure your users and data.",
-    logo: "/placeholder.svg?width=40&height=40&text=Okta",
-  },
-]
 
 export default function MarketplaceModal({ isOpen, onClose, onAddTool, integrations }: MarketplaceModalProps) {
   const [searchQuery, setSearchQuery] = useState("")
 
-  const installedToolNames = useMemo(() => new Set(integrations.map((i) => i.name)), [integrations])
-
-  const toolsWithId = useMemo(
-    () => availableMarketplaceTools.map((tool, index) => ({ ...tool, id: `tool-${index}` })),
-    [],
-  )
+  // Filter integrations to show only those that are NOT connected (i.e., available in marketplace)
+  const availableMarketplaceTools = useMemo(() => integrations.filter((tool) => !tool.is_connected), [integrations])
 
   const filteredTools = useMemo(() => {
-    if (!searchQuery) return toolsWithId
-    return toolsWithId.filter(
+    if (!searchQuery) return availableMarketplaceTools
+    return availableMarketplaceTools.filter(
       (tool) =>
         tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        tool.description.toLowerCase().includes(searchQuery.toLowerCase()),
+        (tool.description && tool.description.toLowerCase().includes(searchQuery.toLowerCase())),
     )
-  }, [searchQuery, toolsWithId])
+  }, [searchQuery, availableMarketplaceTools])
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -125,13 +80,13 @@ export default function MarketplaceModal({ isOpen, onClose, onAddTool, integrati
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto p-1">
-                  {filteredTools.map((tool) => {
-                    const isInstalled = installedToolNames.has(tool.name)
-                    return (
+                  {filteredTools.length > 0 ? (
+                    filteredTools.map((tool) => (
                       <div key={tool.id} className="glass-card p-4 flex flex-col">
                         <div className="flex items-start gap-4 mb-3">
+                          {/* Using placeholder.svg with tool name as query for dynamic logos */}
                           <img
-                            src={tool.logo || "/placeholder.svg"}
+                            src={`/placeholder.svg?width=40&height=40&query=${encodeURIComponent(tool.name)}`}
                             alt={`${tool.name} logo`}
                             className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-700"
                           />
@@ -140,25 +95,24 @@ export default function MarketplaceModal({ isOpen, onClose, onAddTool, integrati
                             <p className="text-sm text-gray-500 dark:text-gray-400">{tool.category}</p>
                           </div>
                         </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 flex-grow mb-4">{tool.description}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 flex-grow mb-4">
+                          {tool.description || `A tool for ${tool.category} management.`}
+                        </p>
                         <div className="flex justify-end">
-                          {isInstalled ? (
-                            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium rounded-lg">
-                              <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                              Installed
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => onAddTool(tool)}
-                              className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                              Add Tool
-                            </button>
-                          )}
+                          <button
+                            onClick={() => onAddTool(tool)}
+                            className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            Add Tool
+                          </button>
                         </div>
                       </div>
-                    )
-                  })}
+                    ))
+                  ) : (
+                    <div className="col-span-full text-center py-12 text-gray-500 dark:text-gray-400">
+                      No tools found in the marketplace matching your search.
+                    </div>
+                  )}
                 </div>
               </Dialog.Panel>
             </Transition.Child>
