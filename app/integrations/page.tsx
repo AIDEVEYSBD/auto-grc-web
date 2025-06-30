@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useCallback } from "react"
-import { PlusIcon, MagnifyingGlassIcon, FunnelIcon } from "@heroicons/react/24/outline"
+import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import {
   WrenchScrewdriverIcon,
   CheckCircleIcon,
@@ -14,29 +14,21 @@ import MarketplaceModal from "@/components/MarketplaceModal"
 import RegistrationModal from "@/components/RegistrationModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
-import type { KPIData, Integration, FilterType } from "@/types"
-import { cn } from "@/lib/utils" // Assuming cn utility is available
+import type { KPIData, Integration } from "@/types"
 
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [filterType, setFilterType] = useState<FilterType>("all") // 'all', 'connected', 'disconnected'
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false)
   const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
 
   const { data: allIntegrations, isLoading, error } = useIntegrations()
+
   const kpis = useIntegrationKPIs(allIntegrations)
 
   const filteredAndSearchedIntegrations = useMemo(() => {
-    let filtered = allIntegrations
-
-    // Apply filter based on connection status
-    if (filterType === "connected") {
-      filtered = filtered.filter((i) => i.is_connected === true)
-    } else if (filterType === "disconnected") {
-      filtered = filtered.filter((i) => i.is_connected === false)
-    }
-    // 'all' filter means no status filtering
+    // Always filter for connected tools using "is-connected"
+    let filtered = allIntegrations.filter((i) => i["is-connected"] === true)
 
     // Apply search query
     if (searchQuery) {
@@ -49,7 +41,7 @@ export default function IntegrationsPage() {
       )
     }
     return filtered
-  }, [allIntegrations, filterType, searchQuery])
+  }, [allIntegrations, searchQuery])
 
   const integrationsByCategory = useMemo(() => {
     return filteredAndSearchedIntegrations.reduce(
@@ -155,44 +147,6 @@ export default function IntegrationsPage() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div className="flex space-x-2 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
-            <button
-              onClick={() => setFilterType("all")}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1",
-                filterType === "all"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600",
-              )}
-            >
-              <FunnelIcon className="h-4 w-4" />
-              All
-            </button>
-            <button
-              onClick={() => setFilterType("connected")}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1",
-                filterType === "connected"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600",
-              )}
-            >
-              <CheckCircleIcon className="h-4 w-4" />
-              Connected
-            </button>
-            <button
-              onClick={() => setFilterType("disconnected")}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1",
-                filterType === "disconnected"
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600",
-              )}
-            >
-              <ExclamationTriangleIcon className="h-4 w-4" />
-              Need Attention
-            </button>
-          </div>
         </div>
 
         <div className="space-y-8">
@@ -206,25 +160,16 @@ export default function IntegrationsPage() {
                   {integrations.map((integration) => (
                     <IntegrationCard key={integration.id} integration={integration} />
                   ))}
-                  {/* Add "Add Tool" card if showing all or disconnected and no tools in category */}
-                  {(filterType === "all" || filterType === "disconnected") &&
-                    integrations.filter((i) => !i.is_connected).length === 0 && (
-                      <IntegrationCard isAddButton onAddClick={handleOpenMarketplace} />
-                    )}
                 </div>
               </div>
             ))
           ) : (
             <div className="text-center py-12">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Tools Found</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Connected Tools Found</h3>
               <p className="text-gray-500 dark:text-gray-400 mt-2">
                 {searchQuery
-                  ? "No tools match your search criteria."
-                  : filterType === "connected"
-                    ? "No connected tools found. Browse the marketplace to add new tools."
-                    : filterType === "disconnected"
-                      ? "No tools needing attention found. All your tools are connected!"
-                      : "Get started by adding a new tool from the marketplace."}
+                  ? "No connected tools match your search criteria."
+                  : "No connected tools found. Browse the marketplace to add new tools."}
               </p>
               <button
                 onClick={handleOpenMarketplace}

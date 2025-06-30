@@ -29,7 +29,8 @@ function IntegrationCard({ integration, isAddButton = false, onAddClick, classNa
 
   if (!integration) return null
 
-  const isConnected = integration.is_connected === true
+  // Use "is-connected" property
+  const isConnected = integration["is-connected"] === true
 
   const getStatusIcon = () => {
     if (isConnected) {

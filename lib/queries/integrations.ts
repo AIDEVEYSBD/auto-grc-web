@@ -40,8 +40,9 @@ export function useIntegrationKPIs(integrations: Integration[]) {
       return { categories: 0, connected: 0, needAttention: 0, totalDatapoints: 0 }
     }
 
-    const connectedIntegrations = integrations.filter((i) => i.is_connected === true)
-    const disconnectedIntegrations = integrations.filter((i) => i.is_connected === false)
+    // Use "is-connected" property
+    const connectedIntegrations = integrations.filter((i) => i["is-connected"] === true)
+    const disconnectedIntegrations = integrations.filter((i) => i["is-connected"] === false)
 
     const categories = new Set(connectedIntegrations.map((i) => i.category)).size
     const connected = connectedIntegrations.length
