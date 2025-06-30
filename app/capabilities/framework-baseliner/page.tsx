@@ -90,8 +90,8 @@ export default function FrameworkBaselinerPage() {
 
     try {
       const formData = new FormData()
-      formData.append("source_framework", sourceFramework)
-      formData.append("target_framework", targetFramework)
+      formData.append("source_framework_name", sourceFramework)
+      formData.append("target_framework_name", targetFramework)
       formData.append("user_email", "jai@autogrc.cloud")
       formData.append("top_k", "5")
       formData.append("generate_excel", generateExcel.toString())
