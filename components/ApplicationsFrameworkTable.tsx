@@ -1,7 +1,6 @@
 "use client"
 
 import { useMemo } from "react"
-import { CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon } from "@heroicons/react/24/solid"
 import { useApplications } from "@/lib/queries/applications"
 import { useFrameworks } from "@/lib/queries/frameworks"
 import { useComplianceAssessments } from "@/lib/queries/assessments"
@@ -53,22 +52,22 @@ export default function ApplicationsFrameworkTable() {
     })
   }, [applications, frameworks, assessments, allControls])
 
-  const getStatusIcon = (status: string, score: number) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "compliant":
-        return <CheckCircleIcon className="w-5 h-5 text-emerald-600" />
+        return "bg-emerald-500"
       case "warning":
-        return <ExclamationTriangleIcon className="w-5 h-5 text-amber-600" />
+        return "bg-amber-500"
       case "critical":
-        return <XCircleIcon className="w-5 h-5 text-red-600" />
+        return "bg-red-500"
       default:
-        return <div className="w-5 h-5 bg-gray-300 rounded-full" />
+        return "bg-gray-300"
     }
   }
 
   if (appsLoading || frameworksLoading || assessmentsLoading || controlsLoading) {
     return (
-      <div className="glass-card p-6">
+      <div className="glass-card p-8">
         <LoadingSkeleton className="h-64" />
       </div>
     )
@@ -76,15 +75,8 @@ export default function ApplicationsFrameworkTable() {
 
   return (
     <div className="glass-card">
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-5 h-5 bg-purple-100 dark:bg-purple-900/30 rounded flex items-center justify-center">
-            <svg className="w-3 h-3 text-purple-600 dark:text-purple-400" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h12a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1V8z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Applications Framework Compliance</h2>
-        </div>
+      <div className="p-8 border-b border-gray-200 dark:border-gray-700">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Applications Framework Compliance</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Compliance status of each application across all frameworks
         </p>
@@ -94,18 +86,18 @@ export default function ApplicationsFrameworkTable() {
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-800/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-8 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Application
               </th>
               {frameworks?.map((framework) => (
                 <th
                   key={framework.id}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                  className="px-6 py-4 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
                 >
                   {framework.name}
                 </th>
               ))}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Overall
               </th>
             </tr>
@@ -113,34 +105,35 @@ export default function ApplicationsFrameworkTable() {
           <tbody className="bg-white dark:bg-transparent divide-y divide-gray-200 dark:divide-gray-700">
             {tableData.map((app) => (
               <tr key={app.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-8 py-6 whitespace-nowrap">
                   <div className="flex items-center">
-                    <div className="flex-shrink-0 h-8 w-8">
-                      <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-                        <span className="text-xs font-medium text-white">{app.name.charAt(0).toUpperCase()}</span>
+                    <div className="flex-shrink-0 h-10 w-10">
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                        <span className="text-sm font-semibold text-white">{app.name.charAt(0).toUpperCase()}</span>
                       </div>
                     </div>
                     <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">{app.name}</div>
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">{app.name}</div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">{app.owner_email}</div>
                     </div>
                   </div>
                 </td>
                 {app.frameworkScores.map((framework) => (
-                  <td key={framework.frameworkId} className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      {getStatusIcon(framework.status, framework.score)}
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">{framework.score}%</span>
+                  <td key={framework.frameworkId} className="px-6 py-6 whitespace-nowrap text-center">
+                    <div className="flex items-center justify-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${getStatusColor(framework.status)}`} />
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{framework.score}%</span>
                     </div>
                   </td>
                 ))}
-                <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    {getStatusIcon(
-                      app.overall_score >= 80 ? "compliant" : app.overall_score >= 40 ? "warning" : "critical",
-                      app.overall_score,
-                    )}
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                <td className="px-6 py-6 whitespace-nowrap text-center">
+                  <div className="flex items-center justify-center gap-3">
+                    <div
+                      className={`w-3 h-3 rounded-full ${getStatusColor(
+                        app.overall_score >= 80 ? "compliant" : app.overall_score >= 40 ? "warning" : "critical",
+                      )}`}
+                    />
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
                       {Math.round(app.overall_score)}%
                     </span>
                   </div>
@@ -152,9 +145,9 @@ export default function ApplicationsFrameworkTable() {
       </div>
 
       {tableData.length === 0 && (
-        <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-          <div className="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
-            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+          <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -163,7 +156,7 @@ export default function ApplicationsFrameworkTable() {
               />
             </svg>
           </div>
-          No application data available
+          <p className="text-lg font-medium">No application data available</p>
         </div>
       )}
     </div>

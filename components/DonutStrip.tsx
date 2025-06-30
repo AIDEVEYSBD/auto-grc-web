@@ -21,14 +21,9 @@ export default function DonutStrip({ className = "" }: DonutStripProps) {
 
   if (frameworksLoading || assessmentsLoading || controlsLoading) {
     return (
-      <div className={`glass-card p-6 ${className}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 rounded flex items-center justify-center">
-            <div className="w-3 h-3 border-2 border-blue-600 dark:border-blue-400 rounded-full border-t-transparent animate-spin"></div>
-          </div>
-          <h3 className="text-lg font-semibold">Framework Compliance</h3>
-        </div>
-        <LoadingSkeleton className="h-24" />
+      <div className={`glass-card p-8 ${className}`}>
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Framework Compliance</h3>
+        <LoadingSkeleton className="h-32" />
       </div>
     )
   }
@@ -52,35 +47,24 @@ export default function DonutStrip({ className = "" }: DonutStripProps) {
       return {
         name: framework.name,
         value: passedAssessments,
-        total: totalControls || 1, // Avoid division by zero
+        total: totalControls,
       }
     }) || []
 
   return (
-    <div className={`glass-card p-6 ${className}`}>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 rounded flex items-center justify-center">
-          <svg className="w-3 h-3 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fillRule="evenodd"
-              d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V8zm0 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Framework Compliance</h3>
-      </div>
+    <div className={`glass-card p-8 ${className}`}>
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Framework Compliance</h3>
 
       {frameworkData.length > 0 ? (
-        <div className="flex gap-8 overflow-x-auto pb-2">
+        <div className="flex gap-12 overflow-x-auto pb-4">
           {frameworkData.map((framework, index) => (
-            <DonutChart key={index} data={framework} size={120} className="flex-shrink-0" />
+            <DonutChart key={index} data={framework} size={140} className="flex-shrink-0" />
           ))}
         </div>
       ) : (
-        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-          <div className="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
-            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+          <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -89,7 +73,7 @@ export default function DonutStrip({ className = "" }: DonutStripProps) {
               />
             </svg>
           </div>
-          No framework data available
+          <p className="text-lg font-medium">No framework data available</p>
         </div>
       )}
     </div>

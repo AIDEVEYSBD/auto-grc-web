@@ -20,16 +20,16 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
     return "#dc2626" // red-600
   }
 
-  const getBackgroundColor = (percent: number) => {
-    if (percent >= 80) return "#d1fae5" // emerald-100
-    if (percent >= 40) return "#fef3c7" // amber-100
-    return "#fee2e2" // red-100
-  }
-
+  // Always show the full circle, even when empty
   const chartData = [
-    { value: data.value, fill: getColor(percentage) },
-    { value: Math.max(data.total - data.value, 0), fill: "#f3f4f6" }, // gray-100
+    { value: data.value || 0.1, fill: getColor(percentage) }, // Show tiny slice when 0
+    { value: Math.max(data.total - (data.value || 0), 0.1), fill: "#e5e7eb" }, // gray-200
   ]
+
+  // For completely empty charts, show full gray circle
+  const emptyChartData = [{ value: 100, fill: "#e5e7eb" }]
+
+  const displayData = data.total === 0 || (data.value === 0 && data.total > 0) ? emptyChartData : chartData
 
   return (
     <div className={`flex flex-col items-center ${className}`}>
@@ -37,7 +37,7 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={chartData}
+              data={displayData}
               cx="50%"
               cy="50%"
               innerRadius={size * 0.35}
@@ -47,8 +47,8 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
               dataKey="value"
               stroke="none"
             >
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} />
+              {displayData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
             </Pie>
           </PieChart>
@@ -56,14 +56,14 @@ export default function DonutChart({ data, size = 80, className = "", showLabel 
 
         {/* Center percentage text */}
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{Math.round(percentage)}%</span>
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{Math.round(percentage)}%</span>
         </div>
       </div>
 
       {showLabel && (
-        <div className="text-center mt-2">
-          <p className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[100px]">{data.name}</p>
-          <p className="text-xs text-gray-600 dark:text-gray-400">
+        <div className="text-center mt-3">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[120px]">{data.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {data.value}/{data.total} controls
           </p>
         </div>

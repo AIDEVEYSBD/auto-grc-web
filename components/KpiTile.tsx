@@ -11,32 +11,34 @@ export default function KpiTile({ data, className = "" }: KpiTileProps) {
   const getColorClasses = (color?: string) => {
     switch (color) {
       case "blue":
-        return "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+        return "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
       case "purple":
-        return "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400"
+        return "bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400"
       case "green":
-        return "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
+        return "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400"
       case "red":
-        return "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+        return "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400"
       case "yellow":
-        return "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400"
+        return "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
       default:
-        return "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+        return "bg-gray-50 dark:bg-gray-800/20 text-gray-600 dark:text-gray-400"
     }
   }
 
   return (
     <div className={`glass-card p-6 ${className}`}>
       <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">{label}</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
             {typeof value === "number" ? value.toLocaleString() : value}
           </p>
         </div>
         {Icon && (
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${getColorClasses(color)}`}>
-            <Icon className="w-5 h-5" />
+          <div
+            className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ml-4 ${getColorClasses(color)}`}
+          >
+            <Icon className="w-6 h-6" />
           </div>
         )}
       </div>

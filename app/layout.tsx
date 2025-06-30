@@ -7,7 +7,11 @@ import Topbar from "@/components/Topbar"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import "@/styles/globals.css"
 
-const inter = Inter({ subsets: ["latin"] })
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+})
 
 export const metadata: Metadata = {
   title: "AutoGRC - Cybersecurity Compliance Dashboard",
@@ -22,15 +26,15 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+    <html lang="en" suppressHydrationWarning className={inter.variable}>
+      <body className={`${inter.className} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <ErrorBoundary>
             <div className="flex h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 overflow-hidden">
               <Sidebar />
-              <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+              <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <Topbar />
-                <main className="flex-1 overflow-auto p-4 sm:p-6 relative z-10">{children}</main>
+                <main className="flex-1 overflow-auto p-4 sm:p-6">{children}</main>
               </div>
             </div>
           </ErrorBoundary>
