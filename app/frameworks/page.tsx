@@ -1,17 +1,19 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { mutate } from "swr"
 import { DocumentTextIcon, ShieldCheckIcon, StarIcon, ArrowUpTrayIcon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import FrameworkCard from "@/components/FrameworkCard"
 import FrameworkComparisonTable from "@/components/FrameworkComparisonTable"
+import UploadFrameworkModal from "@/components/UploadFrameworkModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
-import { useFrameworks, useFrameworkKPIs, setMasterFramework } from "@/lib/queries/frameworks"
+import { useFrameworks, useFrameworkKPIs, setMasterFramework, createFramework } from "@/lib/queries/frameworks"
 import { useFrameworkMappings } from "@/lib/queries/mappings"
 import type { KPIData } from "@/types"
 
 export default function FrameworksPage() {
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const { data: frameworks, isLoading: frameworksLoading } = useFrameworks()
   const { data: mappings, isLoading: mappingsLoading } = useFrameworkMappings()
   const { totalControls, controls: allControls } = useFrameworkKPIs()
@@ -31,10 +33,8 @@ export default function FrameworksPage() {
 
       if (!framework.master && masterFramework) {
         const frameworkControlIds = new Set(frameworkControls.map((c) => c.id))
-
         const mappedControls = new Set()
         mappings.forEach((mapping) => {
-          // Check if a mapping connects this framework's control to a master control
           if (frameworkControlIds.has(mapping.source_control_id) && masterControlIds.has(mapping.target_control_id)) {
             mappedControls.add(mapping.source_control_id)
           }
@@ -42,20 +42,14 @@ export default function FrameworksPage() {
             mappedControls.add(mapping.target_control_id)
           }
         })
-
         const mappedCount = mappedControls.size
         const percentage = controlCount > 0 ? Math.round((mappedCount / controlCount) * 100) : 0
         overlap = { mapped: mappedCount, percentage }
       }
 
-      return {
-        ...framework,
-        controlCount,
-        overlap,
-      }
+      return { ...framework, controlCount, overlap }
     })
 
-    // Sort to bring master framework to the front
     return data.sort((a, b) => (a.master === b.master ? 0 : a.master ? -1 : 1))
   }, [frameworks, mappings, allControls])
 
@@ -64,43 +58,52 @@ export default function FrameworksPage() {
 
   const handleSetMaster = async (frameworkId: string) => {
     if (!frameworks) return
-
-    // Optimistic UI update
     const originalFrameworks = [...frameworks]
-    const newFrameworks = frameworks.map((f) => ({
-      ...f,
-      master: f.id === frameworkId,
-    }))
+    const newFrameworks = frameworks.map((f) => ({ ...f, master: f.id === frameworkId }))
     mutate("frameworks", newFrameworks, false)
-
     try {
       await setMasterFramework(frameworkId)
-      mutate("frameworks") // Revalidate data from server
+      mutate("frameworks")
     } catch (error) {
       console.error("Failed to set master framework:", error)
-      mutate("frameworks", originalFrameworks, false) // Revert on error
+      mutate("frameworks", originalFrameworks, false)
     }
   }
 
+  const handleUpload = async (formData: { name: string; version: string; isMaster: boolean; file: File }) => {
+    // Step 1: Create framework entry in Supabase
+    const newFrameworks = await createFramework(formData)
+    if (!newFrameworks || newFrameworks.length === 0) {
+      throw new Error("Failed to create framework record in the database.")
+    }
+    const frameworkId = newFrameworks[0].id
+
+    // Step 2: Send file and ID to the external API
+    const apiFormData = new FormData()
+    apiFormData.append("file", formData.file)
+    apiFormData.append("framework_id", frameworkId)
+
+    const response = await fetch("http://localhost:8000/frameworks/upload/", {
+      method: "POST",
+      body: apiFormData,
+    })
+
+    if (!response.ok) {
+      // Note: In a production app, you might want to delete the created framework record here for consistency.
+      const errorText = await response.text()
+      throw new Error(`File upload failed: ${errorText}`)
+    }
+
+    // Step 3: Close modal and refresh data
+    setIsUploadModalOpen(false)
+    mutate("frameworks")
+    mutate("all-controls") // Also refresh controls data
+  }
+
   const kpiData: KPIData[] = [
-    {
-      label: "Total Frameworks",
-      value: frameworkData.length,
-      icon: DocumentTextIcon,
-      color: "blue",
-    },
-    {
-      label: "Total Controls",
-      value: totalControls,
-      icon: ShieldCheckIcon,
-      color: "green",
-    },
-    {
-      label: "Master Framework",
-      value: masterFramework?.name || "Not Set",
-      icon: StarIcon,
-      color: "yellow",
-    },
+    { label: "Total Frameworks", value: frameworkData.length, icon: DocumentTextIcon, color: "blue" },
+    { label: "Total Controls", value: totalControls, icon: ShieldCheckIcon, color: "green" },
+    { label: "Master Framework", value: masterFramework?.name || "Not Set", icon: StarIcon, color: "yellow" },
   ]
 
   if (isLoading) {
@@ -122,42 +125,52 @@ export default function FrameworksPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Compliance Frameworks</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage and monitor your compliance frameworks</p>
+    <>
+      <UploadFrameworkModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUpload={handleUpload}
+      />
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Compliance Frameworks</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Manage and monitor your compliance frameworks</p>
+          </div>
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <ArrowUpTrayIcon className="h-4 w-4" />
+            Upload Framework
+          </button>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
-          <ArrowUpTrayIcon className="h-4 w-4" />
-          Upload Framework
-        </button>
-      </div>
 
-      {/* KPI Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {kpiData.map((kpi, index) => (
-          <KpiTile key={index} data={kpi} />
-        ))}
-      </div>
+        {/* KPI Tiles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {kpiData.map((kpi, index) => (
+            <KpiTile key={index} data={kpi} />
+          ))}
+        </div>
 
-      {/* Framework Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {frameworkData.map((framework) => (
-          <FrameworkCard key={framework.id} framework={framework} onSetMaster={handleSetMaster} />
-        ))}
-      </div>
+        {/* Framework Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {frameworkData.map((framework) => (
+            <FrameworkCard key={framework.id} framework={framework} onSetMaster={handleSetMaster} />
+          ))}
+        </div>
 
-      {/* Framework Comparison Table */}
-      {masterFramework && allControls && mappings && (
-        <FrameworkComparisonTable
-          masterFramework={masterFramework}
-          otherFrameworks={otherFrameworks}
-          allControls={allControls}
-          allMappings={mappings}
-        />
-      )}
-    </div>
+        {/* Framework Comparison Table */}
+        {masterFramework && allControls && mappings && (
+          <FrameworkComparisonTable
+            masterFramework={masterFramework}
+            otherFrameworks={otherFrameworks}
+            allControls={allControls}
+            allMappings={mappings}
+          />
+        )}
+      </div>
+    </>
   )
 }
