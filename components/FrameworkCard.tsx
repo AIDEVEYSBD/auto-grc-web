@@ -1,14 +1,16 @@
 "use client"
 
 import { StarIcon } from "@heroicons/react/24/solid"
-import DonutChart from "./DonutChart"
 import ProgressBar from "./ProgressBar"
 import type { Framework } from "@/types"
 
 interface FrameworkCardProps {
   framework: Framework & {
     controlCount?: number
-    passedCount?: number
+    overlap?: {
+      mapped: number
+      percentage: number
+    }
   }
   onSetMaster: (id: string) => void
   className?: string
@@ -16,8 +18,7 @@ interface FrameworkCardProps {
 
 export default function FrameworkCard({ framework, onSetMaster, className = "" }: FrameworkCardProps) {
   const total = framework.controlCount || 0
-  const passed = framework.passedCount || 0
-  const percentage = total > 0 ? Math.round((passed / total) * 100) : 0
+  const overlap = framework.overlap
 
   return (
     <div
@@ -37,43 +38,37 @@ export default function FrameworkCard({ framework, onSetMaster, className = "" }
             {framework.version ? `Version ${framework.version}` : "No version"}
           </p>
         </div>
-        {!framework.master && (
-          <DonutChart
-            data={{
-              name: framework.name,
-              value: passed,
-              total: total,
-            }}
-            size={60}
-            showLabel={false}
-          />
+        {!framework.master && overlap && (
+          <span className="text-xl font-bold text-gray-700 dark:text-gray-300">{overlap.percentage}%</span>
         )}
       </div>
 
       <div className="space-y-3">
         {framework.master ? (
-          <div className="text-center py-4">
-            <p className="text-3xl font-bold text-gray-900 dark:text-white">{total}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Controls</p>
+          <div className="text-center py-4 h-24 flex flex-col justify-center">
+            <p className="text-5xl font-bold text-gray-900 dark:text-white">{total}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Total Controls</p>
           </div>
         ) : (
-          <>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600 dark:text-gray-400">
-                {passed} of {total} controls
-              </span>
-              <span className="font-medium">{total > 0 ? `${percentage}%` : "-"}</span>
-            </div>
-            <ProgressBar value={percentage} />
-          </>
+          <div className="h-24 flex flex-col justify-center">
+            {overlap && (
+              <>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600 dark:text-gray-400">
+                    {overlap.mapped} of {total} controls mapped
+                  </span>
+                  <span className="font-medium">{overlap.percentage}%</span>
+                </div>
+                <ProgressBar value={overlap.percentage} />
+              </>
+            )}
+          </div>
         )}
 
-        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700/50">
-          <div className="flex gap-2">
-            <span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded">
-              {total} controls
-            </span>
-          </div>
+        <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700/50">
+          <span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded">
+            {total} controls
+          </span>
           {!framework.master && (
             <button
               onClick={() => onSetMaster(framework.id)}

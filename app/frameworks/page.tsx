@@ -8,38 +8,56 @@ import FrameworkCard from "@/components/FrameworkCard"
 import FrameworkComparisonTable from "@/components/FrameworkComparisonTable"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useFrameworks, useFrameworkKPIs, setMasterFramework } from "@/lib/queries/frameworks"
-import { useComplianceAssessments } from "@/lib/queries/assessments"
 import { useFrameworkMappings } from "@/lib/queries/mappings"
 import type { KPIData } from "@/types"
 
 export default function FrameworksPage() {
   const { data: frameworks, isLoading: frameworksLoading } = useFrameworks()
-  const { data: assessments, isLoading: assessmentsLoading } = useComplianceAssessments()
   const { data: mappings, isLoading: mappingsLoading } = useFrameworkMappings()
   const { totalControls, controls: allControls } = useFrameworkKPIs()
 
-  const isLoading = frameworksLoading || assessmentsLoading || mappingsLoading
+  const isLoading = frameworksLoading || mappingsLoading
 
   const frameworkData = useMemo(() => {
-    if (!frameworks || !assessments || !allControls) return []
+    if (!frameworks || !mappings || !allControls) return []
+
+    const masterFramework = frameworks.find((f) => f.master)
+    const masterControlIds = new Set(allControls.filter((c) => c.framework_id === masterFramework?.id).map((c) => c.id))
 
     const data = frameworks.map((framework) => {
       const frameworkControls = allControls.filter((c) => c.framework_id === framework.id)
-      const frameworkControlIds = new Set(frameworkControls.map((c) => c.id))
-      const passedAssessments = assessments.filter(
-        (a) => frameworkControlIds.has(a.control_id) && a.status === "pass",
-      ).length
+      const controlCount = frameworkControls.length
+      let overlap
+
+      if (!framework.master && masterFramework) {
+        const frameworkControlIds = new Set(frameworkControls.map((c) => c.id))
+
+        const mappedControls = new Set()
+        mappings.forEach((mapping) => {
+          // Check if a mapping connects this framework's control to a master control
+          if (frameworkControlIds.has(mapping.source_control_id) && masterControlIds.has(mapping.target_control_id)) {
+            mappedControls.add(mapping.source_control_id)
+          }
+          if (frameworkControlIds.has(mapping.target_control_id) && masterControlIds.has(mapping.source_control_id)) {
+            mappedControls.add(mapping.target_control_id)
+          }
+        })
+
+        const mappedCount = mappedControls.size
+        const percentage = controlCount > 0 ? Math.round((mappedCount / controlCount) * 100) : 0
+        overlap = { mapped: mappedCount, percentage }
+      }
 
       return {
         ...framework,
-        controlCount: frameworkControls.length,
-        passedCount: passedAssessments,
+        controlCount,
+        overlap,
       }
     })
 
     // Sort to bring master framework to the front
     return data.sort((a, b) => (a.master === b.master ? 0 : a.master ? -1 : 1))
-  }, [frameworks, assessments, allControls])
+  }, [frameworks, mappings, allControls])
 
   const masterFramework = frameworkData.find((f) => f.master)
   const otherFrameworks = frameworkData.filter((f) => !f.master)
