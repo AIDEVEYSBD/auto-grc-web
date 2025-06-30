@@ -6,7 +6,6 @@ import Sidebar from "@/components/Sidebar"
 import Topbar from "@/components/Topbar"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import "@/styles/globals.css"
-import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -40,7 +39,6 @@ export default function RootLayout({
             </div>
           </ErrorBoundary>
         </ThemeProvider>
-        <Toaster />
       </body>
     </html>
   )

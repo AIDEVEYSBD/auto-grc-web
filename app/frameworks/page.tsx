@@ -11,11 +11,9 @@ import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useFrameworks, useFrameworkKPIs, setMasterFramework, createFramework } from "@/lib/queries/frameworks"
 import { useFrameworkMappings } from "@/lib/queries/mappings"
 import type { KPIData } from "@/types"
-import { useToast } from "@/hooks/use-toast"
 
 export default function FrameworksPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const { toast } = useToast()
   const { data: frameworks, isLoading: frameworksLoading } = useFrameworks()
   const { data: mappings, isLoading: mappingsLoading } = useFrameworkMappings()
   const { totalControls, controls: allControls } = useFrameworkKPIs()
@@ -73,48 +71,37 @@ export default function FrameworksPage() {
   }
 
   const handleUpload = async (formData: { name: string; version: string; isMaster: boolean; file: File }) => {
-    try {
-      // Step 1: Create framework entry in Supabase
-      const newFrameworks = await createFramework(formData)
-      if (!newFrameworks || newFrameworks.length === 0) {
-        throw new Error("Failed to create framework record in the database.")
-      }
-      const frameworkId = newFrameworks[0].id
-
-      // Step 2: Send file and ID to the external API
-      const apiFormData = new FormData()
-      apiFormData.append("file", formData.file)
-      apiFormData.append("framework_id", frameworkId)
-
-      const response = await fetch("http://localhost:8000/frameworks/upload/", {
-        method: "POST",
-        body: apiFormData,
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.message || `File upload failed with status ${response.status}`)
-      }
-
-      // Step 3: Show success toast with API message
-      toast({
-        title: "Upload Successful",
-        description: result.message,
-      })
-
-      // Step 4: Close modal and refresh data
-      setIsUploadModalOpen(false)
-      mutate("frameworks")
-      mutate("all-controls")
-    } catch (error: any) {
-      console.error("Upload failed:", error)
-      toast({
-        variant: "destructive",
-        title: "Upload Failed",
-        description: error.message || "An unexpected error occurred.",
-      })
+    // Step 1: Create framework entry in Supabase
+    const newFrameworks = await createFramework(formData)
+    if (!newFrameworks || newFrameworks.length === 0) {
+      throw new Error("Failed to create framework record in the database.")
     }
+    const frameworkId = newFrameworks[0].id
+
+    // Step 2: Send file and ID to the external API
+    const apiFormData = new FormData()
+    apiFormData.append("file", formData.file)
+    apiFormData.append("framework_id", frameworkId)
+
+    const response = await fetch("http://localhost:8000/frameworks/upload/", {
+      method: "POST",
+      body: apiFormData,
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`File upload failed: ${errorText}`)
+    }
+
+    // Step 3: Return the successful response body to be displayed in the modal
+    return response.json()
+  }
+
+  const handleModalClose = () => {
+    setIsUploadModalOpen(false)
+    // Revalidate data after the modal is fully closed to see the new framework
+    mutate("frameworks")
+    mutate("all-controls")
   }
 
   const kpiData: KPIData[] = [
@@ -143,11 +130,7 @@ export default function FrameworksPage() {
 
   return (
     <>
-      <UploadFrameworkModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onUpload={handleUpload}
-      />
+      <UploadFrameworkModal isOpen={isUploadModalOpen} onClose={handleModalClose} onUpload={handleUpload} />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
