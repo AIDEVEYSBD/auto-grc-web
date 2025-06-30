@@ -84,7 +84,7 @@ export default function FrameworksPage() {
     apiFormData.append("file", formData.file)
     apiFormData.append("framework_id", frameworkId)
 
-    const response = await fetch("http://localhost:8000/frameworks/upload/", {
+    const response = await fetch("http://localhost:8003/frameworks/upload/", {
       method: "POST",
       body: apiFormData,
     })

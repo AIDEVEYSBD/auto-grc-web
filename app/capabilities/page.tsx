@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { PlayIcon, ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline"
+import { PlayIcon, ArrowTopRightOnSquareIcon, LinkIcon, ChartBarIcon, BoltIcon } from "@heroicons/react/24/outline"
 
 export default function CapabilitiesPage() {
   const capabilities = [
@@ -11,7 +11,7 @@ export default function CapabilitiesPage() {
       description:
         "Allows users to initiate and track framework-to-framework mapping in your GRC system. Streamline compliance by establishing baseline mappings between different regulatory frameworks and standards.",
       href: "/capabilities/framework-baseliner",
-      icon: "🔗",
+      icon: LinkIcon,
       color: "blue",
     },
     {
@@ -20,7 +20,7 @@ export default function CapabilitiesPage() {
       description:
         "Maps SOC2 Type2 report against selected framework. Automatically analyze your SOC2 compliance reports and map findings to your chosen compliance framework for comprehensive coverage analysis.",
       href: "/capabilities/soc-mapper",
-      icon: "📊",
+      icon: ChartBarIcon,
       color: "emerald",
     },
     {
@@ -29,7 +29,7 @@ export default function CapabilitiesPage() {
       description:
         "Automatically assesses certain controls of the Master Framework for various applications and stores their details. Reduce manual effort by automating control assessments across your application portfolio.",
       href: "/capabilities/controls-automation",
-      icon: "⚡",
+      icon: BoltIcon,
       color: "purple",
     },
   ]
@@ -75,11 +75,12 @@ export default function CapabilitiesPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {capabilities.map((capability) => {
           const colors = getColorClasses(capability.color)
+          const IconComponent = capability.icon
           return (
             <div key={capability.id} className="glass-card p-6 hover:shadow-xl transition-shadow">
               <div className="flex items-start justify-between mb-4">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colors.bg}`}>
-                  <span className="text-2xl">{capability.icon}</span>
+                  <IconComponent className={`h-6 w-6 ${colors.text}`} />
                 </div>
                 <Link
                   href={capability.href}
