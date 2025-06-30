@@ -36,9 +36,10 @@ export default function UploadFrameworkModal({ isOpen, onClose, onUpload }: Uplo
     setIsLoading(true)
     try {
       await onUpload({ name, version, isMaster, file })
-      // Parent will close the modal on success
+      // On success, the parent will close the modal, so we don't need to reset loading state here.
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.")
+      // The parent component now handles showing the error toast.
+      // We just need to stop the loading spinner in case of an error.
     } finally {
       setIsLoading(false)
     }
