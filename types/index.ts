@@ -50,13 +50,10 @@ export interface FrameworkMapping {
 
 export interface Integration {
   id: string
-  category: string
   name: string
-  description?: string
-  status: "connected" | "warning" | "disconnected"
-  last_sync: string
-  datapoints: number
-  created_at: string
+  category: string
+  linked_controls: string | null
+  is_connected: boolean
 }
 
 export interface Capability {

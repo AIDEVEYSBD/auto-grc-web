@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import type React from "react"
+
+import { useState, useMemo, useCallback } from "react"
 import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import {
   WrenchScrewdriverIcon,
@@ -15,7 +17,7 @@ import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs, useIntegrationsByCategory } from "@/lib/queries/integrations"
 import type { KPIData } from "@/types"
 
-type FilterType = "all" | "connected" | "warning" | "disconnected"
+type FilterType = "all" | "connected" | "disconnected"
 
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -23,35 +25,38 @@ export default function IntegrationsPage() {
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
 
   const { data: integrations, isLoading } = useIntegrations()
-  const kpis = useIntegrationKPIs()
-  const integrationsByCategory = useIntegrationsByCategory()
+  const kpis = useIntegrationKPIs(integrations)
+  const integrationsByCategory = useIntegrationsByCategory(integrations)
 
-  const kpiData: KPIData[] = [
-    {
-      label: "Tool Categories",
-      value: kpis.categories,
-      icon: WrenchScrewdriverIcon,
-      color: "blue",
-    },
-    {
-      label: "Connected Tools",
-      value: kpis.connected,
-      icon: CheckCircleIcon,
-      color: "green",
-    },
-    {
-      label: "Need Attention",
-      value: kpis.needAttention,
-      icon: ExclamationTriangleIcon,
-      color: "yellow",
-    },
-    {
-      label: "Data Points",
-      value: kpis.totalDatapoints.toLocaleString(),
-      icon: CircleStackIcon,
-      color: "purple",
-    },
-  ]
+  const kpiData: KPIData[] = useMemo(
+    () => [
+      {
+        label: "Tool Categories",
+        value: kpis.categories,
+        icon: WrenchScrewdriverIcon,
+        color: "blue",
+      },
+      {
+        label: "Connected Tools",
+        value: kpis.connected,
+        icon: CheckCircleIcon,
+        color: "green",
+      },
+      {
+        label: "Need Attention",
+        value: kpis.needAttention,
+        icon: ExclamationTriangleIcon,
+        color: "yellow",
+      },
+      {
+        label: "Data Points",
+        value: kpis.totalDatapoints.toLocaleString(),
+        icon: CircleStackIcon,
+        color: "purple",
+      },
+    ],
+    [kpis],
+  )
 
   const filteredIntegrationsByCategory = useMemo(() => {
     const filtered: Record<string, any[]> = {}
@@ -64,14 +69,15 @@ export default function IntegrationsPage() {
         filteredIntegrations = filteredIntegrations.filter(
           (integration) =>
             integration.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            integration.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (integration.description && integration.description.toLowerCase().includes(searchQuery.toLowerCase())),
+            integration.category.toLowerCase().includes(searchQuery.toLowerCase()),
         )
       }
 
       // Apply status filter
-      if (activeFilter !== "all") {
-        filteredIntegrations = filteredIntegrations.filter((integration) => integration.status === activeFilter)
+      if (activeFilter === "connected") {
+        filteredIntegrations = filteredIntegrations.filter((integration) => integration.is_connected === true)
+      } else if (activeFilter === "disconnected") {
+        filteredIntegrations = filteredIntegrations.filter((integration) => integration.is_connected === false)
       }
 
       if (filteredIntegrations.length > 0) {
@@ -82,20 +88,30 @@ export default function IntegrationsPage() {
     return filtered
   }, [integrationsByCategory, searchQuery, activeFilter])
 
-  const filterButtons = [
-    { key: "all" as FilterType, label: "All", count: integrations?.length || 0 },
-    { key: "connected" as FilterType, label: "Connected", count: kpis.connected },
-    {
-      key: "warning" as FilterType,
-      label: "Warning",
-      count: integrations?.filter((i) => i.status === "warning").length || 0,
-    },
-    {
-      key: "disconnected" as FilterType,
-      label: "Disconnected",
-      count: integrations?.filter((i) => i.status === "disconnected").length || 0,
-    },
-  ]
+  const filterButtons = useMemo(
+    () => [
+      { key: "all" as FilterType, label: "All", count: integrations?.length || 0 },
+      { key: "connected" as FilterType, label: "Connected", count: kpis.connected },
+      { key: "disconnected" as FilterType, label: "Disconnected", count: kpis.needAttention },
+    ],
+    [integrations, kpis.connected, kpis.needAttention],
+  )
+
+  const handleOpenMarketplace = useCallback(() => {
+    setIsMarketplaceOpen(true)
+  }, [])
+
+  const handleCloseMarketplace = useCallback(() => {
+    setIsMarketplaceOpen(false)
+  }, [])
+
+  const handleFilterChange = useCallback((filter: FilterType) => {
+    setActiveFilter(filter)
+  }, [])
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value)
+  }, [])
 
   if (isLoading) {
     return (
@@ -121,7 +137,7 @@ export default function IntegrationsPage() {
           </p>
         </div>
         <button
-          onClick={() => setIsMarketplaceOpen(true)}
+          onClick={handleOpenMarketplace}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg"
         >
           <PlusIcon className="h-4 w-4" />
@@ -144,7 +160,7 @@ export default function IntegrationsPage() {
             type="text"
             placeholder="Search categories or tools..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
@@ -153,7 +169,7 @@ export default function IntegrationsPage() {
           {filterButtons.map((filter) => (
             <button
               key={filter.key}
-              onClick={() => setActiveFilter(filter.key)}
+              onClick={() => handleFilterChange(filter.key)}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                 activeFilter === filter.key
                   ? "bg-blue-600 text-white"
@@ -186,7 +202,7 @@ export default function IntegrationsPage() {
               {categoryIntegrations.map((integration) => (
                 <IntegrationCard key={integration.id} integration={integration} />
               ))}
-              <IntegrationCard isAddButton onAddClick={() => setIsMarketplaceOpen(true)} />
+              <IntegrationCard isAddButton onAddClick={handleOpenMarketplace} />
             </div>
           </div>
         ))}
@@ -200,11 +216,7 @@ export default function IntegrationsPage() {
       </div>
 
       {/* Marketplace Modal */}
-      <MarketplaceModal
-        isOpen={isMarketplaceOpen}
-        onClose={() => setIsMarketplaceOpen(false)}
-        integrations={integrations}
-      />
+      <MarketplaceModal isOpen={isMarketplaceOpen} onClose={handleCloseMarketplace} integrations={integrations} />
     </div>
   )
 }

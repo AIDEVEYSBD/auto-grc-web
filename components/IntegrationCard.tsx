@@ -1,14 +1,8 @@
 "use client"
 
-import {
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  XCircleIcon,
-  ArrowPathIcon,
-  EllipsisVerticalIcon,
-  PlusIcon,
-} from "@heroicons/react/24/outline"
+import { XCircleIcon, ArrowPathIcon, EllipsisVerticalIcon, PlusIcon } from "@heroicons/react/24/outline"
 import { CheckCircleIcon as CheckCircleIconSolid } from "@heroicons/react/24/solid"
+import { memo } from "react"
 import type { Integration } from "@/types"
 
 interface IntegrationCardProps {
@@ -18,12 +12,7 @@ interface IntegrationCardProps {
   className?: string
 }
 
-export default function IntegrationCard({
-  integration,
-  isAddButton = false,
-  onAddClick,
-  className = "",
-}: IntegrationCardProps) {
+function IntegrationCard({ integration, isAddButton = false, onAddClick, className = "" }: IntegrationCardProps) {
   if (isAddButton) {
     return (
       <button
@@ -41,42 +30,38 @@ export default function IntegrationCard({
   if (!integration) return null
 
   const getStatusIcon = () => {
-    switch (integration.status) {
-      case "connected":
-        return <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
-      case "warning":
-        return <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
-      case "disconnected":
-        return <XCircleIcon className="h-5 w-5 text-red-500" />
-      default:
-        return <CheckCircleIcon className="h-5 w-5 text-gray-400" />
+    if (integration.is_connected) {
+      return <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
+    } else {
+      return <XCircleIcon className="h-5 w-5 text-red-500" />
     }
   }
 
   const getStatusText = () => {
-    switch (integration.status) {
-      case "connected":
-        return "Connected"
-      case "warning":
-        return "Warning"
-      case "disconnected":
-        return "Disconnected"
-      default:
-        return "Unknown"
-    }
+    return integration.is_connected ? "Connected" : "Disconnected"
   }
 
   const getStatusColor = () => {
-    switch (integration.status) {
-      case "connected":
-        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-      case "warning":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-      case "disconnected":
-        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
+    if (integration.is_connected) {
+      return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+    } else {
+      return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
     }
+  }
+
+  const getDescription = () => {
+    // Generate description based on category
+    const descriptions: Record<string, string> = {
+      SIEM: "Security Information and Event Management platform",
+      EDR: "Endpoint Detection and Response solution",
+      "Endpoint Protection": "Endpoint security and protection platform",
+      "Vulnerability Management": "Vulnerability assessment and management tool",
+      "Identity Management": "Identity and access management solution",
+      "Cloud Security": "Cloud security posture management platform",
+      "Network Security": "Network security monitoring and protection",
+      Compliance: "Compliance management and reporting tool",
+    }
+    return descriptions[integration.category] || `${integration.category} security tool`
   }
 
   return (
@@ -86,9 +71,7 @@ export default function IntegrationCard({
           {getStatusIcon()}
           <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-gray-900 dark:text-white text-base mb-1">{integration.name}</h4>
-            {integration.description && (
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{integration.description}</p>
-            )}
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{getDescription()}</p>
           </div>
         </div>
 
@@ -105,3 +88,5 @@ export default function IntegrationCard({
     </div>
   )
 }
+
+export default memo(IntegrationCard)
