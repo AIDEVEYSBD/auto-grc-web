@@ -1,4 +1,5 @@
 import type React from "react"
+
 export interface Application {
   id: string
   name: string
@@ -51,9 +52,11 @@ export interface Integration {
   id: string
   category: string
   name: string
+  description?: string
   status: "connected" | "warning" | "disconnected"
   last_sync: string
   datapoints: number
+  created_at: string
 }
 
 export interface Capability {
