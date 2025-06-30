@@ -9,6 +9,18 @@ import QualysDataSelectionModal from "./QualysDataSelectionModal"
 interface MarketplaceModalProps {
   isOpen: boolean
   onClose: () => void
+  onIntegrationAdded: (integration: Integration) => void
+}
+
+interface Integration {
+  id: string
+  category: string
+  name: string
+  status: string
+  last_sync: string
+  datapoints: number
+  data: any
+  selectedFields: string[]
 }
 
 const mockIntegrations = [
@@ -92,7 +104,7 @@ const mockIntegrations = [
   },
 ]
 
-export default function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
+export default function MarketplaceModal({ isOpen, onClose, onIntegrationAdded }: MarketplaceModalProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Categories")
   const [selectedPricing, setSelectedPricing] = useState("All Pricing")
@@ -131,10 +143,61 @@ export default function MarketplaceModal({ isOpen, onClose }: MarketplaceModalPr
   }
 
   const handleDataSelectionSave = (selectedFields: string[]) => {
-    console.log("Selected fields:", selectedFields)
-    console.log("Qualys data:", qualysData)
-    // Here you would typically save the integration configuration
-    // and the selected data fields to your backend
+    if (!qualysData) return
+
+    // Filter the data to only include selected fields
+    const filteredData = filterDataByFields(qualysData, selectedFields)
+
+    // Create new integration entry
+    const newIntegration: Integration = {
+      id: `qualys-ssl-${Date.now()}`,
+      category: "SSL/TLS Analysis",
+      name: `Qualys SSL Labs - ${qualysData.host}`,
+      status: "connected",
+      last_sync: new Date().toISOString(),
+      datapoints: selectedFields.length,
+      data: filteredData,
+      selectedFields: selectedFields,
+    }
+
+    // Add to integrations
+    onIntegrationAdded(newIntegration)
+
+    // Close modals
+    setIsDataSelectionOpen(false)
+    onClose()
+  }
+
+  // Helper function to filter data by selected fields
+  const filterDataByFields = (data: any, selectedFields: string[]) => {
+    const filtered: any = {}
+
+    selectedFields.forEach((fieldPath) => {
+      const parts = fieldPath.split(".")
+      let sourceValue = data
+      let targetObj = filtered
+
+      // Navigate to the value in source data
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (sourceValue && typeof sourceValue === "object") {
+          sourceValue = sourceValue[parts[i]]
+
+          // Create nested structure in target
+          if (!targetObj[parts[i]]) {
+            targetObj[parts[i]] = {}
+          }
+          targetObj = targetObj[parts[i]]
+        }
+      }
+
+      // Set the final value
+      if (sourceValue && typeof sourceValue === "object") {
+        const finalKey = parts[parts.length - 1]
+        targetObj[finalKey] = sourceValue[finalKey]
+      }
+    })
+
+    return filtered
   }
 
   const getPricingColor = (pricing: string) => {

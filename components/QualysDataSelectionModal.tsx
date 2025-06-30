@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useState, useMemo } from "react"
+import { Fragment, useState, useMemo, useEffect } from "react"
 import { Dialog, Transition } from "@headlessui/react"
 import { XMarkIcon, CheckIcon } from "@heroicons/react/24/outline"
 
@@ -12,7 +12,7 @@ interface QualysDataSelectionModalProps {
 }
 
 export default function QualysDataSelectionModal({ isOpen, onClose, data, onSave }: QualysDataSelectionModalProps) {
-  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(() => new Set(availableFields))
 
   // Extract all possible field paths from the data
   const availableFields = useMemo(() => {
@@ -41,9 +41,11 @@ export default function QualysDataSelectionModal({ isOpen, onClose, data, onSave
   }, [data])
 
   // Initialize with all fields selected
-  useState(() => {
-    setSelectedFields(new Set(availableFields))
-  })
+  useEffect(() => {
+    if (availableFields.length > 0 && selectedFields.size === 0) {
+      setSelectedFields(new Set(availableFields))
+    }
+  }, [availableFields])
 
   const toggleField = (field: string) => {
     const newSelected = new Set(selectedFields)

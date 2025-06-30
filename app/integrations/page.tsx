@@ -1,54 +1,97 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import IntegrationCard from "@/components/IntegrationCard"
 import MarketplaceModal from "@/components/MarketplaceModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
-import { useIntegrations, useIntegrationKPIs, useIntegrationsByCategory } from "@/lib/queries/integrations"
-import type { KPIData } from "@/types"
+import { useIntegrations } from "@/lib/queries/integrations"
+import type { KPIData, Integration } from "@/types"
 
 export default function IntegrationsPage() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(["Cloud Security"])
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
+  const [customIntegrations, setCustomIntegrations] = useState<Integration[]>([])
 
   const { data: integrations, isLoading } = useIntegrations()
-  const kpis = useIntegrationKPIs()
-  const integrationsByCategory = useIntegrationsByCategory()
 
-  const kpiData: KPIData[] = [
-    {
-      label: "Categories",
-      value: kpis.categories,
-      delta: 1,
-      trend: "up",
-    },
-    {
-      label: "Connected",
-      value: kpis.connected,
-      delta: 3,
-      trend: "up",
-    },
-    {
-      label: "Need Attention",
-      value: kpis.needAttention,
-      delta: -2,
-      trend: "down",
-    },
-    {
-      label: "Total Datapoints",
-      value: kpis.totalDatapoints.toLocaleString(),
-      delta: 15,
-      trend: "up",
-    },
-  ]
+  // Combine original integrations with custom ones
+  const allIntegrations = useMemo(() => {
+    return [...(integrations || []), ...customIntegrations]
+  }, [integrations, customIntegrations])
 
-  const toggleCategory = (category: string) => {
+  // Calculate KPIs with combined data
+  const kpis = useMemo(() => {
+    const categories = new Set(allIntegrations?.map((i) => i.category)).size || 0
+    const connected = allIntegrations?.filter((i) => i.status === "connected").length || 0
+    const needAttention = allIntegrations?.filter((i) => i.status !== "connected").length || 0
+    const totalDatapoints = allIntegrations?.reduce((sum, i) => sum + i.datapoints, 0) || 0
+
+    return {
+      categories,
+      connected,
+      needAttention,
+      totalDatapoints,
+    }
+  }, [allIntegrations])
+
+  // Group integrations by category
+  const integrationsByCategory = useMemo(() => {
+    const grouped =
+      allIntegrations?.reduce(
+        (acc, integration) => {
+          if (!acc[integration.category]) {
+            acc[integration.category] = []
+          }
+          acc[integration.category].push(integration)
+          return acc
+        },
+        {} as Record<string, Integration[]>,
+      ) || {}
+
+    return grouped
+  }, [allIntegrations])
+
+  const kpiData: KPIData[] = useMemo(
+    () => [
+      {
+        label: "Categories",
+        value: kpis.categories,
+        delta: 1,
+        trend: "up",
+      },
+      {
+        label: "Connected",
+        value: kpis.connected,
+        delta: 3,
+        trend: "up",
+      },
+      {
+        label: "Need Attention",
+        value: kpis.needAttention,
+        delta: -2,
+        trend: "down",
+      },
+      {
+        label: "Total Datapoints",
+        value: kpis.totalDatapoints.toLocaleString(),
+        delta: 15,
+        trend: "up",
+      },
+    ],
+    [kpis],
+  )
+
+  const toggleCategory = useCallback((category: string) => {
     setExpandedCategories((prev) =>
       prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category],
     )
-  }
+  }, [])
+
+  const handleIntegrationAdded = useCallback((newIntegration: Integration) => {
+    setCustomIntegrations((prev) => [...prev, newIntegration])
+  }, [])
 
   if (isLoading) {
     return (
@@ -139,7 +182,11 @@ export default function IntegrationsPage() {
       </div>
 
       {/* Marketplace Modal */}
-      <MarketplaceModal isOpen={isMarketplaceOpen} onClose={() => setIsMarketplaceOpen(false)} />
+      <MarketplaceModal
+        isOpen={isMarketplaceOpen}
+        onClose={() => setIsMarketplaceOpen(false)}
+        onIntegrationAdded={handleIntegrationAdded}
+      />
     </div>
   )
 }

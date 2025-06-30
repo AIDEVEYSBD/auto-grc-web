@@ -1,4 +1,7 @@
-import { CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ClockIcon } from "@heroicons/react/24/solid"
+"use client"
+
+import { CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ClockIcon, EyeIcon } from "@heroicons/react/24/solid"
+import { useState } from "react"
 import type { Integration } from "@/types"
 
 interface IntegrationCardProps {
@@ -7,6 +10,8 @@ interface IntegrationCardProps {
 }
 
 export default function IntegrationCard({ integration, className = "" }: IntegrationCardProps) {
+  const [showDetails, setShowDetails] = useState(false)
+
   const getStatusIcon = () => {
     switch (integration.status) {
       case "connected":
@@ -44,6 +49,47 @@ export default function IntegrationCard({ integration, className = "" }: Integra
     return `${Math.floor(diffInHours / 24)}d ago`
   }
 
+  const renderDataValue = (value: any): string => {
+    if (value === null || value === undefined) return "N/A"
+    if (typeof value === "object") return JSON.stringify(value, null, 2)
+    return String(value)
+  }
+
+  const renderSelectedData = () => {
+    if (!integration.data || !integration.selectedFields) return null
+
+    return (
+      <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Integration Data</h4>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {integration.selectedFields.map((fieldPath) => {
+            const parts = fieldPath.split(".")
+            let value = integration.data
+
+            // Navigate to the value
+            for (const part of parts) {
+              if (value && typeof value === "object") {
+                value = value[part]
+              } else {
+                value = "N/A"
+                break
+              }
+            }
+
+            return (
+              <div key={fieldPath} className="flex justify-between items-start gap-2">
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400 flex-shrink-0">{fieldPath}:</span>
+                <span className="text-xs text-gray-900 dark:text-white text-right break-all">
+                  {renderDataValue(value)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`glass-card p-4 hover:shadow-lg transition-shadow ${className}`}>
       <div className="flex items-center justify-between mb-3">
@@ -57,10 +103,24 @@ export default function IntegrationCard({ integration, className = "" }: Integra
         <span className={getStatusBadge()}>{integration.status}</span>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+      <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-3">
         <span>Last sync: {formatLastSync(integration.last_sync)}</span>
         <span>{integration.datapoints.toLocaleString()} datapoints</span>
       </div>
+
+      {/* Show details button for integrations with data */}
+      {integration.data && integration.selectedFields && (
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+        >
+          <EyeIcon className="h-4 w-4" />
+          {showDetails ? "Hide Details" : "View Details"}
+        </button>
+      )}
+
+      {/* Render selected data if details are shown */}
+      {showDetails && renderSelectedData()}
     </div>
   )
 }

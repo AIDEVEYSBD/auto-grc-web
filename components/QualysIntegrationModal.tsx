@@ -75,12 +75,15 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
       return
     }
 
+    // Clean the domain (remove protocol if present)
+    const cleanDomain = formData.testDomain.replace(/^https?:\/\//, "").replace(/\/$/, "")
+
     setIsLoading(true)
     setError(null)
 
     try {
       const params = new URLSearchParams({
-        host: formData.testDomain,
+        host: cleanDomain,
         email: formData.email,
         startNew: "on",
       })
@@ -96,6 +99,9 @@ export default function QualysIntegrationModal({ isOpen, onClose, onDataReceived
         }
         throw new Error(result.error || "SSL analysis failed")
       }
+
+      // Add the host to the result for reference
+      result.host = cleanDomain
 
       // Pass the data to parent component
       onDataReceived(result)
