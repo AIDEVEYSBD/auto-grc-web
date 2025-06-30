@@ -72,7 +72,7 @@ export default function FrameworkCard({ framework, onSetMaster, className = "" }
           {!framework.master && (
             <button
               onClick={() => onSetMaster(framework.id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white/50 dark:bg-slate-800/50 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
             >
               <StarIcon className="h-3 w-3" />
               Set Master

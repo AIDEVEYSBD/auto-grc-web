@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { mutate } from "swr"
-import { DocumentTextIcon, ShieldCheckIcon, StarIcon } from "@heroicons/react/24/outline"
+import { DocumentTextIcon, ShieldCheckIcon, StarIcon, ArrowUpTrayIcon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import FrameworkCard from "@/components/FrameworkCard"
 import FrameworkComparisonTable from "@/components/FrameworkComparisonTable"
@@ -124,9 +124,15 @@ export default function FrameworksPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Compliance Frameworks</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Manage and monitor your compliance frameworks</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Compliance Frameworks</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage and monitor your compliance frameworks</p>
+        </div>
+        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+          <ArrowUpTrayIcon className="h-4 w-4" />
+          Upload Framework
+        </button>
       </div>
 
       {/* KPI Tiles */}
