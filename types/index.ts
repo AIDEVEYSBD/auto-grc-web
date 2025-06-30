@@ -51,11 +51,9 @@ export interface Integration {
   id: string
   category: string
   name: string
-  status: "connected" | "warning" | "disconnected" | "pending"
+  status: "connected" | "warning" | "disconnected"
   last_sync: string
   datapoints: number
-  data?: any // Store the actual integration data
-  selectedFields?: string[] // Store which fields were selected
 }
 
 export interface Capability {
