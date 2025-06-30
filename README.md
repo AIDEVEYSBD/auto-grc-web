@@ -64,7 +64,7 @@ The application expects the following Supabase tables:
 
 ## Architecture
 
-```mermaid
+\`\`\`mermaid
 graph TB
     A[Next.js Frontend] --> B[Supabase Database]
     A --> C[SWR Data Fetching]
