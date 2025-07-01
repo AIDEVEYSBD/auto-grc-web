@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, type ChangeEvent, type DragEvent } from "r
 import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, CheckCircleIcon } from "@heroicons/react/24/outline"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useSearchParams } from "next/navigation"
 
 interface JobStatus {
   job_id: string
@@ -24,6 +25,11 @@ export default function SocMapperPage() {
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // ──────────────────────────────────────────────────────────
+  // URL ?test=true flag (safe both on server & client)
+  const searchParams = useSearchParams()
+  const isTestMode = searchParams?.get("test") === "true"
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -81,17 +87,17 @@ export default function SocMapperPage() {
       if (!response.ok) {
         throw new Error("Failed to fetch job status")
       }
-      
+
       const status: JobStatus = await response.json()
       setJobStatus(status)
-      
+
       // Handle completion
       if (status.status === "completed") {
         if (pollIntervalRef.current) {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
         }
-        
+
         // Auto-download the file
         const downloadUrl = `http://localhost:8000/download/${jobId}`
         const a = document.createElement("a")
@@ -100,7 +106,7 @@ export default function SocMapperPage() {
         document.body.appendChild(a)
         a.click()
         a.remove()
-        
+
         // Reset state after successful download
         setTimeout(() => {
           setIsUploading(false)
@@ -143,9 +149,8 @@ export default function SocMapperPage() {
 
     try {
       // First, check if we're in test mode
-      const isTestMode = window.location.search.includes("test=true")
       const endpoint = isTestMode ? "http://localhost:8000/test" : "http://localhost:8000/process"
-      
+
       const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
@@ -182,7 +187,7 @@ export default function SocMapperPage() {
         // Production mode - job submission
         const result = await response.json()
         setJobId(result.job_id)
-        
+
         // Initial status
         setJobStatus({
           job_id: result.job_id,
@@ -191,12 +196,12 @@ export default function SocMapperPage() {
           stage: "Initializing",
           filename: file.name,
         })
-        
+
         // Start polling
         pollIntervalRef.current = setInterval(() => {
           pollJobStatus(result.job_id)
         }, 2000) // Poll every 2 seconds
-        
+
         // Immediate first poll
         pollJobStatus(result.job_id)
       }
@@ -215,7 +220,7 @@ export default function SocMapperPage() {
 
   const getStatusMessage = () => {
     if (!jobStatus) return "Uploading..."
-    
+
     switch (jobStatus.status) {
       case "queued":
         return "Job queued, waiting to start..."
@@ -307,12 +312,8 @@ export default function SocMapperPage() {
           ) : (
             <div className="space-y-4">
               <div className="text-center">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  Processing {file?.name}
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {getStatusMessage()}
-                </p>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Processing {file?.name}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{getStatusMessage()}</p>
               </div>
 
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
@@ -323,9 +324,7 @@ export default function SocMapperPage() {
               </div>
 
               <div className="text-center">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {jobStatus?.progress || 0}% complete
-                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{jobStatus?.progress || 0}% complete</p>
                 {jobStatus?.status === "processing" && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                     This process can take up to 60 minutes depending on the document size.
@@ -341,14 +340,12 @@ export default function SocMapperPage() {
               )}
             </div>
           )}
-          
+
           <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center">
             <p>This will send the PDF to the backend for processing.</p>
             <p>The following parameters are hardcoded: pages 36-81, top_k=5.</p>
-            {window.location.search.includes("test=true") && (
-              <p className="mt-2 text-blue-600 dark:text-blue-400 font-medium">
-                Test mode enabled - using mock data
-              </p>
+            {isTestMode && (
+              <p className="mt-2 text-blue-600 dark:text-blue-400 font-medium">Test mode enabled – using mock data</p>
             )}
           </div>
         </div>
