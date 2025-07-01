@@ -1,119 +1,180 @@
-import { NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
-import { Pool } from "pg"
+import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase"
 
-const QUALYS_API_URL = "https://api.ssllabs.com/api/v4/analyze"
-const QUALYS_INTEGRATION_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
+const QUALYS_API_BASE = "https://api.ssllabs.com/api/v4"
+const QUALYS_SSL_LABS_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
 
-// Use connection pooling for database operations
-const pool = new Pool({ connectionString: process.env.POSTGRES_URL })
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { email, selectedFields } = body
 
-// Helper to filter an object based on a list of keys
-const filterObject = (obj: any, keys: string[]): any => {
-  const filtered: { [key: string]: any } = {}
-  for (const key of keys) {
-    const keyParts = key.split(".")
-    let current = obj
-    let target = filtered
-    for (let i = 0; i < keyParts.length; i++) {
-      const part = keyParts[i]
-      if (current[part] === undefined) break
-      if (i === keyParts.length - 1) {
-        target[part] = current[part]
-      } else {
-        target[part] = target[part] || {}
-        current = current[part]
-        target = target[part]
+    if (!email || !selectedFields || selectedFields.length === 0) {
+      return NextResponse.json({ error: "Email and selected fields are required" }, { status: 400 })
+    }
+
+    const supabase = createClient()
+
+    // 1. Create the table by executing the SQL script
+    const { error: tableError } = await supabase.rpc("exec_sql", {
+      sql_query: `
+        -- Create table for storing Qualys SSL Labs scan results
+        CREATE TABLE IF NOT EXISTS qualys_ssl_labs_scans (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
+            hostname VARCHAR(255) NOT NULL,
+            scan_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            scan_data JSONB NOT NULL,
+            grade VARCHAR(10),
+            status VARCHAR(50),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        -- Create indexes for better query performance
+        CREATE INDEX IF NOT EXISTS idx_qualys_scans_application_id ON qualys_ssl_labs_scans(application_id);
+        CREATE INDEX IF NOT EXISTS idx_qualys_scans_hostname ON qualys_ssl_labs_scans(hostname);
+        CREATE INDEX IF NOT EXISTS idx_qualys_scans_scan_date ON qualys_ssl_labs_scans(scan_date);
+        CREATE INDEX IF NOT EXISTS idx_qualys_scans_grade ON qualys_ssl_labs_scans(grade);
+      `,
+    })
+
+    if (tableError) {
+      console.error("Table creation error:", tableError)
+      // Continue anyway - table might already exist
+    }
+
+    // 2. Fetch all applications
+    const { data: applications, error: appsError } = await supabase
+      .from("applications")
+      .select("id, name, hostname")
+      .not("hostname", "is", null)
+
+    if (appsError) {
+      return NextResponse.json({ error: "Failed to fetch applications" }, { status: 500 })
+    }
+
+    // 3. Scan each application
+    const scanResults = []
+    const errors = []
+
+    for (const app of applications || []) {
+      try {
+        // Start scan
+        const startResponse = await fetch(`${QUALYS_API_BASE}/analyze?host=${app.hostname}&startNew=on&all=done`, {
+          headers: {
+            email: email,
+          },
+        })
+
+        if (!startResponse.ok) {
+          errors.push(`Failed to start scan for ${app.hostname}`)
+          continue
+        }
+
+        const startData = await startResponse.json()
+
+        // Poll for completion (shorter timeout for bulk scans)
+        let attempts = 0
+        const maxAttempts = 30 // 5 minutes max per scan
+        let scanData = startData
+
+        while (scanData.status !== "READY" && scanData.status !== "ERROR" && attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 10000)) // Wait 10 seconds
+
+          const pollResponse = await fetch(`${QUALYS_API_BASE}/analyze?host=${app.hostname}&all=done`, {
+            headers: {
+              email: email,
+            },
+          })
+
+          if (pollResponse.ok) {
+            scanData = await pollResponse.json()
+          }
+
+          attempts++
+        }
+
+        if (scanData.status === "READY") {
+          // Extract only selected fields
+          const filteredData: any = {}
+
+          const extractValue = (obj: any, path: string): any => {
+            const keys = path.split(".")
+            let current = obj
+
+            for (const key of keys) {
+              if (current && typeof current === "object" && key in current) {
+                current = current[key]
+              } else {
+                return null
+              }
+            }
+
+            return current
+          }
+
+          selectedFields.forEach((field: string) => {
+            const value = extractValue(scanData, field)
+            if (value !== null) {
+              filteredData[field] = value
+            }
+          })
+
+          // Get grade from endpoints if available
+          const grade = scanData.endpoints?.[0]?.grade || null
+
+          // Save to database
+          const { error: insertError } = await supabase.from("qualys_ssl_labs_scans").insert({
+            application_id: app.id,
+            hostname: app.hostname,
+            scan_data: filteredData,
+            grade: grade,
+            status: scanData.status,
+          })
+
+          if (insertError) {
+            errors.push(`Failed to save scan for ${app.hostname}: ${insertError.message}`)
+          } else {
+            scanResults.push({
+              hostname: app.hostname,
+              grade: grade,
+              status: "success",
+            })
+          }
+        } else {
+          errors.push(`Scan timeout for ${app.hostname}`)
+        }
+
+        // Rate limiting - wait between scans
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+      } catch (error) {
+        errors.push(`Error scanning ${app.hostname}: ${error}`)
       }
     }
-  }
-  return filtered
-}
 
-async function pollForResults(host: string, email: string): Promise<any> {
-  let attempts = 0
-  const maxAttempts = 30
-  const pollDelay = 10000 // 10 seconds
-
-  while (attempts < maxAttempts) {
-    const url = `${QUALYS_API_URL}?host=${host}&all=done`
-    const response = await fetch(url, { headers: { email } })
-    const data = await response.json()
-
-    if (data.status === "READY" || data.status === "ERROR") {
-      return data
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollDelay))
-    attempts++
-  }
-  return { status: "TIMEOUT", error: "Scan timed out" }
-}
-
-async function runAndStoreScan(application: { id: string; name: string }, email: string, selectedFields: string[]) {
-  const client = await pool.connect()
-  try {
-    // Initiate scan
-    const initialUrl = `${QUALYS_API_URL}?host=${application.name}&startNew=on&all=done`
-    await fetch(initialUrl, { headers: { email } })
-
-    // Poll for results
-    const result = await pollForResults(application.name, email)
-    const filteredData = filterObject(result, selectedFields)
-
-    // Store results
-    const query = `
-      INSERT INTO qualys_ssl_labs_scans (application_id, hostname, scan_status, grade, scan_data)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (application_id) DO UPDATE SET
-        hostname = EXCLUDED.hostname,
-        scan_status = EXCLUDED.scan_status,
-        grade = EXCLUDED.grade,
-        scan_data = EXCLUDED.scan_data,
-        updated_at = NOW();
-    `
-    await client.query(query, [
-      application.id,
-      application.name,
-      result.status,
-      result.endpoints?.[0]?.grade || null,
-      filteredData,
-    ])
-  } catch (error) {
-    console.error(`Failed to scan ${application.name}:`, error)
-  } finally {
-    client.release()
-  }
-}
-
-export async function POST(request: Request) {
-  const { email, selectedFields } = await request.json()
-
-  if (!email || !selectedFields || !Array.isArray(selectedFields)) {
-    return NextResponse.json({ error: "Email and selectedFields are required" }, { status: 400 })
-  }
-
-  try {
-    // Fetch all applications
-    const { data: applications, error: appsError } = await supabase.from("applications").select("id, name")
-    if (appsError) throw appsError
-
-    // Run scans for all applications in parallel
-    await Promise.all(applications.map((app) => runAndStoreScan(app, email, selectedFields)))
-
-    // Update the integration status
+    // 4. Update integration status
     const { error: updateError } = await supabase
       .from("integrations")
       .update({ "is-connected": true })
-      .eq("id", QUALYS_INTEGRATION_ID)
+      .eq("id", QUALYS_SSL_LABS_ID)
 
-    if (updateError) throw updateError
+    if (updateError) {
+      console.error("Failed to update integration status:", updateError)
+    }
 
-    return NextResponse.json(
-      { message: "Qualys SSL Labs setup complete. Initial scans are running in the background." },
-      { status: 200 },
-    )
-  } catch (error: any) {
-    console.error("Qualys finalize setup error:", error)
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 })
+    return NextResponse.json({
+      success: true,
+      message: "Setup completed successfully",
+      results: {
+        scanned: scanResults.length,
+        errors: errors.length,
+        details: scanResults,
+        errorMessages: errors,
+      },
+    })
+  } catch (error) {
+    console.error("Finalize setup error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

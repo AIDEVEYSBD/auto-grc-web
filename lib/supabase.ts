@@ -68,3 +68,6 @@ export const checkSupabaseConnection = async () => {
     return false
   }
 }
+
+// Re-export createClient so other modules can import it from "@/lib/supabase"
+export { createClient }

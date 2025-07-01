@@ -33,6 +33,7 @@ interface MarketplaceModalProps {
   isOpen: boolean
   onClose: () => void
   integrations: Integration[]
+  onAddTool: (tool: Integration) => void
 }
 
 const categoryIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -54,7 +55,7 @@ const categoryIcons: Record<string, React.ComponentType<{ className?: string }>>
   Default: Zap,
 }
 
-export default function MarketplaceModal({ isOpen, onClose, integrations }: MarketplaceModalProps) {
+export default function MarketplaceModal({ isOpen, onClose, integrations, onAddTool }: MarketplaceModalProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
@@ -78,10 +79,8 @@ export default function MarketplaceModal({ isOpen, onClose, integrations }: Mark
     })
   }, [marketplaceTools, searchTerm, selectedCategory])
 
-  const handleAddTool = (toolId: string) => {
-    // Placeholder for add tool functionality
-    console.log("Adding tool:", toolId)
-    // TODO: Implement server action to update is-connected to true
+  const handleAddTool = (tool: Integration) => {
+    onAddTool(tool)
   }
 
   const getIconForCategory = (category: string) => {
@@ -153,7 +152,7 @@ export default function MarketplaceModal({ isOpen, onClose, integrations }: Mark
                     {tool.description && <p className="text-sm text-gray-600 mb-4 line-clamp-2">{tool.description}</p>}
 
                     <Button
-                      onClick={() => handleAddTool(tool.id)}
+                      onClick={() => handleAddTool(tool)}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                       size="sm"
                     >
