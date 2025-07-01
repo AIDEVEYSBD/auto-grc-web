@@ -23,8 +23,6 @@ export default function SocMapperPage() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
-  const [checkJobId, setCheckJobId] = useState<string>("")
-  const [showJobCheck, setShowJobCheck] = useState(false)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Cleanup polling on unmount
@@ -117,8 +115,6 @@ export default function SocMapperPage() {
         }
         setError(status.error || "Processing failed")
         setIsUploading(false)
-        setJobId(null)
-        setJobStatus(null)
       }
     } catch (err) {
       console.error("Error polling job status:", err)
@@ -338,45 +334,9 @@ export default function SocMapperPage() {
               </div>
 
               {jobStatus?.status === "completed" && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
-                    <CheckCircleIcon className="h-5 w-5" />
-                    <span className="text-sm font-medium">Report generated successfully!</span>
-                  </div>
-                  {jobId && (
-                    <div className="mt-2 text-center">
-                      <a
-                        href={`http://localhost:8000/download/${jobId}`}
-                        download={jobStatus.download_filename || "soc-mapping-report.xlsx"}
-                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        Click here if download didn't start automatically
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {jobStatus?.status === "failed" && error && (
-                <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <XCircleIcon className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-red-800 dark:text-red-300">Processing Failed</p>
-                      <p className="text-sm text-red-700 dark:text-red-400 mt-1">{error}</p>
-                      <button 
-                        onClick={() => {
-                          setIsUploading(false)
-                          setError(null)
-                          setJobStatus(null)
-                          setJobId(null)
-                        }}
-                        className="mt-2 text-sm text-red-600 dark:text-red-400 hover:underline"
-                      >
-                        Try again
-                      </button>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
+                  <CheckCircleIcon className="h-5 w-5" />
+                  <span className="text-sm font-medium">Report generated successfully!</span>
                 </div>
               )}
             </div>
@@ -389,59 +349,6 @@ export default function SocMapperPage() {
               <p className="mt-2 text-blue-600 dark:text-blue-400 font-medium">
                 Test mode enabled - using mock data
               </p>
-            )}
-            
-            {!isUploading && !showJobCheck && (
-              <button
-                onClick={() => setShowJobCheck(true)}
-                className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Have an existing job ID? Check status
-              </button>
-            )}
-            
-            {showJobCheck && !isUploading && (
-              <div className="mt-4 space-y-2">
-                <input
-                  type="text"
-                  value={checkJobId}
-                  onChange={(e) => setCheckJobId(e.target.value)}
-                  placeholder="Enter job ID"
-                  className="w-full px-3 py-2 text-sm border rounded-md dark:bg-gray-800 dark:border-gray-600"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={async () => {
-                      if (checkJobId.trim()) {
-                        setIsUploading(true)
-                        setError(null)
-                        setJobId(checkJobId.trim())
-                        
-                        // Start polling
-                        pollIntervalRef.current = setInterval(() => {
-                          pollJobStatus(checkJobId.trim())
-                        }, 2000)
-                        
-                        // Immediate first poll
-                        pollJobStatus(checkJobId.trim())
-                      }
-                    }}
-                    disabled={!checkJobId.trim()}
-                    className="flex-1"
-                  >
-                    Check Status
-                  </Button>
-                  <button
-                    onClick={() => {
-                      setShowJobCheck(false)
-                      setCheckJobId("")
-                    }}
-                    className="px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
             )}
           </div>
         </div>
