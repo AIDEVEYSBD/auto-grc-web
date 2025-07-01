@@ -1,32 +1,34 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import { performScan, getAvailableFields } from "@/lib/qualys-api"
 
-const QUALYS_ANALYZE_URL = "https://api.ssllabs.com/api/v4/analyze"
-
-export async function POST(req: NextRequest) {
+/**
+ * POST /api/integrations/qualys/sample-scan
+ * Body: { email: string, host?: string }
+ * Performs a live scan on a sample host and returns a list of available data fields.
+ */
+export async function POST(request: NextRequest) {
   try {
-    const { email, host = "autogrc.cloud" } = await req.json()
+    const { email, host = "autogrc.cloud" } = await request.json()
 
     if (!email) {
-      return NextResponse.json({ error: "Email header is required" }, { status: 400 })
+      return NextResponse.json({ error: "Email is required in request body." }, { status: 400 })
     }
 
-    const resp = await fetch(`${QUALYS_ANALYZE_URL}?host=${encodeURIComponent(host)}&startNew=on&all=done`, {
-      headers: { email },
-    })
+    const scanData = await performScan(host, email)
+    const availableFields = getAvailableFields(scanData)
 
-    const raw = await resp.text()
-    let data: unknown
-    try {
-      data = JSON.parse(raw)
-    } catch {
-      // Not valid JSON – forward the text
-      return NextResponse.json({ error: raw }, { status: resp.status || 500 })
-    }
-
-    return NextResponse.json({ data }, { status: 200 })
+    return NextResponse.json(
+      {
+        success: true,
+        scannedHost: host,
+        availableFields: availableFields,
+      },
+      { status: 200 },
+    )
   } catch (err) {
     console.error("Qualys sample-scan route error:", err)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    const errorMessage = err instanceof Error ? err.message : "An unknown error occurred"
+    return NextResponse.json({ error: "Internal server error.", details: errorMessage }, { status: 500 })
   }
 }
