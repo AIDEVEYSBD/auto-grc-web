@@ -7,12 +7,14 @@ export async function POST(request: Request) {
     if (!firstName || !lastName || !email || !organization) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
+    // Basic email validation to prevent common personal email services
+    if (/(gmail|yahoo|hotmail|outlook)\.com$/.test(email)) {
+      return NextResponse.json({ error: "Please use a corporate email address." }, { status: 400 })
+    }
 
     const response = await fetch("https://api.ssllabs.com/api/v4/register", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ firstName, lastName, email, organization }),
     })
 
