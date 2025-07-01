@@ -5,9 +5,20 @@ export interface Integration {
   name: string
   category: string
   description?: string
-  linked_controls: string | null // This is a UUID, not a count.
-  "is-connected": boolean // Corrected from is_connected to is-connected
+  linked_controls: string | null
+  "is-connected": boolean
   created_at: string
+  config?: {
+    userInfo: {
+      firstName: string
+      lastName: string
+      workEmail: string
+      organization: string
+    }
+    selectedFields: string[]
+  } | null
+  connected_at?: string
+  updated_at?: string
 }
 
 export interface KPIData {

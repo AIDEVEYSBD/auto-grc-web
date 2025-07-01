@@ -15,12 +15,20 @@ import RegistrationModal from "@/components/RegistrationModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
 import type { KPIData, Integration } from "@/types"
+// Import the new components
+import QualysRegistrationModal from "@/components/QualysRegistrationModal"
+import QualysSSLIntegrationCard from "@/components/QualysSSLIntegrationCard"
+import { useSWRConfig } from "swr"
 
+// Inside the IntegrationsPage component
 export default function IntegrationsPage() {
+  // ... existing state
   const [searchQuery, setSearchQuery] = useState("")
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false)
   const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
+  const [isQualysModalOpen, setIsQualysModalOpen] = useState(false)
+  const { mutate } = useSWRConfig()
 
   const { data: allIntegrations, isLoading, error } = useIntegrations()
 
@@ -82,6 +90,24 @@ export default function IntegrationsPage() {
     // Optionally re-open marketplace or refresh data
     // setIsMarketplaceOpen(true);
   }, [])
+
+  const handleAddQualysTool = useCallback((tool: Integration) => {
+    setSelectedTool(tool)
+    setIsMarketplaceOpen(false)
+    setIsQualysModalOpen(true)
+  }, [])
+
+  const handleCloseQualysModal = useCallback(() => {
+    setIsQualysModalOpen(false)
+    setSelectedTool(null)
+  }, [])
+
+  const handleQualysSuccess = useCallback(() => {
+    // Revalidate the integrations data to show the new connected card
+    mutate("integrations")
+  }, [mutate])
+
+  // ... existing loading/error states
 
   if (isLoading) {
     return (
@@ -157,9 +183,13 @@ export default function IntegrationsPage() {
                   {category}
                 </h2>
                 <div className="space-y-4">
-                  {integrations.map((integration) => (
-                    <IntegrationCard key={integration.id} integration={integration} />
-                  ))}
+                  {integrations.map((integration) =>
+                    integration.id === "b3f4ff74-56c1-4321-b137-690b939e454a" && integration["is-connected"] ? (
+                      <QualysSSLIntegrationCard key={integration.id} integration={integration} />
+                    ) : (
+                      <IntegrationCard key={integration.id} integration={integration} />
+                    ),
+                  )}
                 </div>
               </div>
             ))
@@ -187,10 +217,19 @@ export default function IntegrationsPage() {
         isOpen={isMarketplaceOpen}
         onClose={handleCloseMarketplace}
         onAddTool={handleAddTool}
+        onAddQualysTool={handleAddQualysTool} // Pass the new handler
         integrations={allIntegrations} // Pass all integrations to the marketplace modal
       />
 
       <RegistrationModal isOpen={isRegistrationOpen} onClose={handleCloseRegistration} tool={selectedTool} />
+      {selectedTool && (
+        <QualysRegistrationModal
+          isOpen={isQualysModalOpen}
+          onClose={handleCloseQualysModal}
+          tool={selectedTool}
+          onSuccess={handleQualysSuccess}
+        />
+      )}
     </>
   )
 }
