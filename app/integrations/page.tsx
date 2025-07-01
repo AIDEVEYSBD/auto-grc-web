@@ -1,119 +1,268 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import useSWR from "swr"
-import { Button } from "@/components/ui/button"
-import { PlusIcon, SearchIcon } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { getIntegrations } from "@/lib/queries/integrations"
-import MarketplaceModal from "@/components/MarketplaceModal"
-import IntegrationCard from "@/components/IntegrationCard"
-import type { Integration } from "@/types"
-import { Skeleton } from "@/components/ui/skeleton"
+import { useState, useMemo, useCallback, useEffect } from "react"
+import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
+import {
+  WrenchScrewdriverIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  CircleStackIcon,
+} from "@heroicons/react/24/solid"
 
-const fetcher = () => getIntegrations()
+import KpiTile from "@/components/KpiTile"
+import IntegrationCard from "@/components/IntegrationCard"
+import MarketplaceModal from "@/components/MarketplaceModal"
+import RegistrationModal from "@/components/RegistrationModal"
+import QualysRegistrationModal from "@/components/QualysRegistrationModal"
+import QualysSSLIntegrationCard from "@/components/QualysSSLIntegrationCard"
+import { CardSkeleton } from "@/components/LoadingSkeleton"
+import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
+import type { KPIData, Integration } from "@/types"
+
+const QUALYS_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
+const SESSION_STORAGE_KEY = "temp_connected_integrations"
 
 export default function IntegrationsPage() {
-  const { data: initialIntegrations, error, isLoading } = useSWR<Integration[]>("integrations", fetcher)
-  const [integrations, setIntegrations] = useState<Integration[]>([])
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [searchTerm, setSearchTerm] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [modalState, setModalState] = useState<{
+    marketplace?: boolean
+    registration?: boolean
+    qualys?: boolean
+  }>({})
+  const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
 
+  // SWR hook to get initial data from Supabase
+  const { data: initialIntegrations, isLoading, error } = useIntegrations()
+
+  // Local state to hold the merged data (Supabase + Session Storage)
+  const [liveIntegrations, setLiveIntegrations] = useState<Integration[]>([])
+
+  // Effect to merge initial data with session storage data on load
   useEffect(() => {
     if (initialIntegrations) {
-      const sessionConnections = JSON.parse(sessionStorage.getItem("integrationConnections") || "{}")
-      const mergedIntegrations = initialIntegrations.map((integ) => {
-        if (sessionConnections[integ.id]) {
-          return {
-            ...integ,
-            "is-connected": true,
-            config: sessionConnections[integ.id].config,
+      try {
+        const tempConnections = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "{}")
+        const merged = initialIntegrations.map((integ) => {
+          if (tempConnections[integ.id]) {
+            return {
+              ...integ,
+              "is-connected": true,
+              config: tempConnections[integ.id].config,
+            }
           }
-        }
-        return integ
-      })
-      setIntegrations(mergedIntegrations)
+          return integ
+        })
+        setLiveIntegrations(merged)
+      } catch (e) {
+        console.error("Failed to parse session storage JSON:", e)
+        setLiveIntegrations(initialIntegrations)
+      }
     }
   }, [initialIntegrations])
 
-  const handleConnectionChange = useCallback((integrationId: string, config?: any) => {
-    const sessionConnections = JSON.parse(sessionStorage.getItem("integrationConnections") || "{}")
-    sessionConnections[integrationId] = { connected: true, config: config || {} }
-    sessionStorage.setItem("integrationConnections", JSON.stringify(sessionConnections))
+  const kpis = useIntegrationKPIs(liveIntegrations)
 
-    setIntegrations((prev) =>
-      prev.map((integ) => (integ.id === integrationId ? { ...integ, "is-connected": true, config } : integ)),
-    )
+  const handleModalClose = useCallback(() => {
+    setModalState({})
+    setSelectedTool(null)
   }, [])
 
-  const filteredIntegrations = integrations.filter((integration) =>
-    integration.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  const handleAddTool = useCallback((tool: Integration) => {
+    setSelectedTool(tool)
+    if (tool.id === QUALYS_ID) {
+      setModalState({ qualys: true })
+    } else {
+      setModalState({ registration: true })
+    }
+  }, [])
+
+  // This function now handles the temporary connection logic
+  const handleSuccess = useCallback(
+    (integrationId: string, config: any) => {
+      // 1. Update session storage
+      try {
+        const tempConnections = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "{}")
+        tempConnections[integrationId] = { config }
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(tempConnections))
+      } catch (e) {
+        console.error("Failed to update session storage:", e)
+      }
+
+      // 2. Update live local state to trigger an immediate re-render
+      setLiveIntegrations((prev) =>
+        prev.map((integ) => (integ.id === integrationId ? { ...integ, "is-connected": true, config } : integ)),
+      )
+
+      // 3. Close the modal
+      handleModalClose()
+    },
+    [handleModalClose],
   )
 
-  const connectedIntegrations = filteredIntegrations.filter((i) => i["is-connected"])
-  const availableIntegrations = filteredIntegrations.filter((i) => !i["is-connected"])
+  const connectedIntegrations = useMemo(() => {
+    let filtered = liveIntegrations.filter((i) => i["is-connected"])
+
+    if (searchQuery) {
+      const lowercasedQuery = searchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (integration) =>
+          integration.name.toLowerCase().includes(lowercasedQuery) ||
+          (integration.description && integration.description.toLowerCase().includes(lowercasedQuery)) ||
+          integration.category.toLowerCase().includes(lowercasedQuery),
+      )
+    }
+    return filtered
+  }, [liveIntegrations, searchQuery])
+
+  const integrationsByCategory = useMemo(() => {
+    return connectedIntegrations.reduce(
+      (acc, integration) => {
+        const category = integration.category
+        if (!acc[category]) acc[category] = []
+        acc[category].push(integration)
+        return acc
+      },
+      {} as Record<string, Integration[]>,
+    )
+  }, [connectedIntegrations])
+
+  const kpiData: KPIData[] = useMemo(
+    () => [
+      { label: "Tool Categories", value: kpis.categories, icon: WrenchScrewdriverIcon, color: "blue" },
+      { label: "Connected Tools", value: kpis.connected, icon: CheckCircleIcon, color: "green" },
+      { label: "Need Attention", value: kpis.needAttention, icon: ExclamationTriangleIcon, color: "yellow" },
+      { label: "Data Points", value: kpis.totalDatapoints.toLocaleString(), icon: CircleStackIcon, color: "purple" },
+    ],
+    [kpis],
+  )
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+        <div className="space-y-8 mt-8">
+          <CardSkeleton className="h-24" />
+          <CardSkeleton className="h-24" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-20">
+        <h3 className="text-lg font-medium text-red-600 dark:text-red-400">Failed to load integrations</h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          Please check your network connection and Supabase configuration.
+        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Error: {error.message}</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Integrations</h2>
-        <div className="flex items-center space-x-2">
-          <Button onClick={() => setIsModalOpen(true)}>
-            <PlusIcon className="mr-2 h-4 w-4" /> Add New Integration
-          </Button>
+    <>
+      <div className="space-y-6 p-6 pb-20">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Security Integrations</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              Manage your connected cybersecurity tools across all categories
+            </p>
+          </div>
+          <button
+            onClick={() => setModalState({ marketplace: true })}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg"
+          >
+            <PlusIcon className="h-4 w-4" />
+            Browse Marketplace
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {kpiData.map((kpi, index) => (
+            <KpiTile key={index} data={kpi} />
+          ))}
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search connected tools..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-8">
+          {Object.keys(integrationsByCategory).length > 0 ? (
+            Object.entries(integrationsByCategory).map(([category, integrations]) => (
+              <div key={category}>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide">
+                  {category}
+                </h2>
+                <div className="space-y-4">
+                  {integrations.map((integration) =>
+                    integration.id === QUALYS_ID ? (
+                      <QualysSSLIntegrationCard key={integration.id} integration={integration} />
+                    ) : (
+                      <IntegrationCard key={integration.id} integration={integration} />
+                    ),
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Connected Tools Found</h3>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">
+                {searchQuery
+                  ? "No connected tools match your search criteria."
+                  : "Browse the marketplace to add new tools."}
+              </p>
+              <button
+                onClick={() => setModalState({ marketplace: true })}
+                className="mt-4 flex mx-auto items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <PlusIcon className="h-4 w-4" />
+                Browse Marketplace
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      <div className="relative">
-        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search integrations..."
-          className="pl-10"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-      </div>
-
-      {isLoading && (
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-1/4" />
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-48 w-full" />
-          </div>
-        </div>
-      )}
-
-      {error && <p className="text-red-500">Failed to load integrations.</p>}
-
-      {connectedIntegrations.length > 0 && (
-        <div>
-          <h3 className="text-xl font-semibold mb-4">Connected</h3>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {connectedIntegrations.map((integration) => (
-              <IntegrationCard key={integration.id} integration={integration} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {availableIntegrations.length > 0 && (
-        <div>
-          <h3 className="text-xl font-semibold mb-4">Available</h3>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {availableIntegrations.map((integration) => (
-              <IntegrationCard key={integration.id} integration={integration} onConnect={() => setIsModalOpen(true)} />
-            ))}
-          </div>
-        </div>
-      )}
 
       <MarketplaceModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        integrations={initialIntegrations || []}
-        onConnectSuccess={handleConnectionChange}
+        isOpen={!!modalState.marketplace}
+        onClose={handleModalClose}
+        onAddTool={handleAddTool}
+        integrations={liveIntegrations}
       />
-    </div>
+
+      {selectedTool && (
+        <>
+          <RegistrationModal
+            isOpen={!!modalState.registration}
+            onClose={handleModalClose}
+            tool={selectedTool}
+            onSuccess={handleSuccess}
+          />
+          <QualysRegistrationModal
+            isOpen={!!modalState.qualys}
+            onClose={handleModalClose}
+            tool={selectedTool}
+            onSuccess={handleSuccess}
+          />
+        </>
+      )}
+    </>
   )
 }

@@ -6,27 +6,18 @@ import { useMemo } from "react"
 import type { Integration } from "@/types"
 
 // Fetcher function for SWR - fetches all integrations from the DB
-export async function fetchIntegrations() {
+const fetcher = async (key: string) => {
   const { data, error } = await supabase.from("integrations").select("*").order("name", { ascending: true })
 
   if (error) {
     console.error("Supabase fetch error:", error)
     throw error
   }
-  return (data as Integration[]) || []
-}
-
-export async function getIntegrations(): Promise<Integration[]> {
-  try {
-    return await fetchIntegrations()
-  } catch (err) {
-    console.error("getIntegrations(): falling back to empty list →", err)
-    return []
-  }
+  return data as Integration[]
 }
 
 export function useIntegrations() {
-  const { data, error, isLoading, mutate } = useSWR("integrations", fetchIntegrations, {
+  const { data, error, isLoading, mutate } = useSWR("integrations", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
   })
