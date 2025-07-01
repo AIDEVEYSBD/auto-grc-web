@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -52,11 +51,11 @@ const ResultRenderer = ({ data, pathPrefix = "", selectedFields }: any) => {
         }
 
         return (
-          <div key={key} className="flex justify-between items-center">
+          <div key={key} className="flex justify-between items-center py-1">
             <span className="font-medium capitalize text-gray-600 dark:text-gray-400">
               {key.replace(/([A-Z])/g, " $1")}
             </span>
-            <span className="font-mono text-xs text-right">
+            <span className="font-mono text-xs text-right max-w-[50%] truncate">
               {isSelected ? (
                 typeof value === "boolean" ? (
                   <Badge variant={value ? "destructive" : "default"}>{value ? "Yes" : "No"}</Badge>
@@ -91,11 +90,10 @@ function QualysSSLIntegrationCard({ integration }: QualysSSLIntegrationCardProps
 
     try {
       const response = await fetch(`/api/ssllabs?host=${hostname}`)
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Analysis failed.")
-      }
       const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Analysis failed.")
+      }
       setAnalysisResult(data)
     } catch (err: any) {
       setError(err.message)
@@ -155,16 +153,16 @@ function QualysSSLIntegrationCard({ integration }: QualysSSLIntegrationCardProps
               </div>
             </div>
 
-            <Accordion type="multiple" className="w-full" defaultValue={["endpoints"]}>
+            <Accordion type="multiple" className="w-full" defaultValue={["endpoints-0"]}>
               {analysisResult.endpoints.map((endpoint: any, index: number) => (
-                <AccordionItem key={endpoint.ipAddress} value={`endpoint-${index}`}>
+                <AccordionItem key={endpoint.ipAddress} value={`endpoints-${index}`}>
                   <AccordionTrigger>
                     Endpoint: {endpoint.ipAddress} (Grade: {endpoint.grade})
                   </AccordionTrigger>
                   <AccordionContent>
                     <ResultRenderer
                       data={endpoint.details}
-                      pathPrefix={`endpoints[0].details`}
+                      pathPrefix={`endpoints[${index}].details`}
                       selectedFields={selectedFields}
                     />
                   </AccordionContent>

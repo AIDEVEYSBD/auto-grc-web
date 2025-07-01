@@ -19,60 +19,43 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Lock } from "lucide-react"
-import { extractFields, type ExtractedField } from "@/lib/qualys"
+import { extractFields } from "@/lib/qualys"
 import type { Integration } from "@/types"
 
 interface QualysRegistrationModalProps {
   isOpen: boolean
   onClose: () => void
-  onConnect: () => void
-  integration: Integration
+  tool: Integration
+  onSuccess: () => void
 }
 
-type Step = "userInfo" | "fieldSelection" | "connecting"
-
-export default function QualysRegistrationModal({
-  isOpen,
-  onClose,
-  onConnect,
-  integration,
-}: QualysRegistrationModalProps) {
-  const [step, setStep] = useState<Step>("userInfo")
-  const [user, setUser] = useState({
-    firstName: "",
-    lastName: "",
-    workEmail: "",
-    organization: "",
-    targetHostname: "autogrc.cloud",
-  })
+export default function QualysRegistrationModal({ isOpen, onClose, tool, onSuccess }: QualysRegistrationModalProps) {
+  const [step, setStep] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [apiFields, setApiFields] = useState<ExtractedField[]>([])
-  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set())
+  const [userInfo, setUserInfo] = useState({ firstName: "", lastName: "", workEmail: "", organization: "" })
+  const [apiData, setApiData] = useState<any>(null)
+  const [selectedFields, setSelectedFields] = useState<string[]>([])
 
-  const handleUserInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target
-    setUser((prev) => ({ ...prev, [id]: value }))
+  const allFields = useMemo(() => (apiData ? extractFields(apiData) : []), [apiData])
+
+  const handleUserInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUserInfo({ ...userInfo, [e.target.name]: e.target.value })
   }
 
-  const fetchApiStructure = async () => {
+  const handleNextStep = async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/api/ssllabs?host=${user.targetHostname}`)
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to fetch API structure.")
-      }
+      const response = await fetch(`/api/ssllabs?host=autogrc.cloud`)
       const data = await response.json()
-      const fields = extractFields(data)
-      setApiFields(fields)
-
-      // Pre-select non-sensitive fields
-      const nonSensitive = fields.filter((f) => !f.sensitive).map((f) => f.path)
-      setSelectedFields(new Set(nonSensitive))
-
-      setStep("fieldSelection")
+      if (!response.ok) throw new Error(data.error || "Failed to fetch data from SSL Labs.")
+      setApiData(data)
+      const nonSensitiveFields = extractFields(data)
+        .filter((f) => !f.sensitive)
+        .map((f) => f.path)
+      setSelectedFields(nonSensitiveFields)
+      setStep(2)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -80,20 +63,7 @@ export default function QualysRegistrationModal({
     }
   }
 
-  const handleFieldToggle = (path: string) => {
-    setSelectedFields((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(path)) {
-        newSet.delete(path)
-      } else {
-        newSet.add(path)
-      }
-      return newSet
-    })
-  }
-
-  const handleConnect = async () => {
-    setStep("connecting")
+  const handleFinish = async () => {
     setIsLoading(true)
     setError(null)
     try {
@@ -101,151 +71,159 @@ export default function QualysRegistrationModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          integrationId: integration.id,
-          user,
-          selectedFields: Array.from(selectedFields),
+          integrationId: tool.id,
+          config: { userInfo, selectedFields },
         }),
       })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to connect.")
+        const data = await response.json()
+        throw new Error(data.error || "Failed to connect integration.")
       }
-      onConnect()
-      onClose()
+      onSuccess()
     } catch (err: any) {
       setError(err.message)
-      setStep("fieldSelection") // Go back to previous step on error
     } finally {
       setIsLoading(false)
     }
   }
 
-  const categorizedFields = useMemo(() => {
-    const categories: Record<string, ExtractedField[]> = {
-      "Host Info": [],
-      Endpoints: [],
-      Certificates: [],
-      "Security Details": [],
-      Other: [],
-    }
-    apiFields.forEach((field) => {
-      if (field.path.startsWith("endpoints")) categories["Endpoints"].push(field)
-      else if (field.path.startsWith("certs")) categories["Certificates"].push(field)
-      else if (field.path.includes("vuln") || field.path.includes("supports"))
-        categories["Security Details"].push(field)
-      else if (["host", "port", "protocol", "status", "engineVersion"].includes(field.path))
-        categories["Host Info"].push(field)
-      else categories["Other"].push(field)
-    })
-    return categories
-  }, [apiFields])
-
-  const renderStep = () => {
-    switch (step) {
-      case "userInfo":
-        return (
-          <>
-            <DialogHeader>
-              <DialogTitle>Register Qualys SSL Labs</DialogTitle>
-              <DialogDescription>Please provide your information to set up the integration.</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              {Object.entries(user).map(([key, value]) => (
-                <div className="grid grid-cols-4 items-center gap-4" key={key}>
-                  <Label htmlFor={key} className="text-right capitalize">
-                    {key.replace(/([A-Z])/g, " $1")}
-                  </Label>
-                  <Input
-                    id={key}
-                    value={value}
-                    onChange={handleUserInputChange}
-                    className="col-span-3"
-                    required
-                    disabled={key === "targetHostname"}
-                  />
-                </div>
-              ))}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button onClick={fetchApiStructure} disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Next
-              </Button>
-            </DialogFooter>
-          </>
-        )
-      case "fieldSelection":
-        return (
-          <>
-            <DialogHeader>
-              <DialogTitle>Select Data Fields</DialogTitle>
-              <DialogDescription>
-                Choose which fields to import from the SSL Labs API. Unselected fields will be obfuscated.
-              </DialogDescription>
-              <div className="text-sm text-muted-foreground pt-2">
-                {apiFields.length} fields available, {selectedFields.size} selected.
-              </div>
-            </DialogHeader>
-            <ScrollArea className="h-96 my-4 border rounded-md p-4">
-              <Accordion type="multiple" defaultValue={Object.keys(categorizedFields)}>
-                {Object.entries(categorizedFields).map(([category, fields]) =>
-                  fields.length > 0 ? (
-                    <AccordionItem key={category} value={category}>
-                      <AccordionTrigger>{category}</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2">
-                          {fields.map((field) => (
-                            <div key={field.path} className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Checkbox
-                                  id={field.path}
-                                  checked={selectedFields.has(field.path)}
-                                  onCheckedChange={() => handleFieldToggle(field.path)}
-                                />
-                                <Label htmlFor={field.path} className="font-normal">
-                                  {field.path}
-                                </Label>
-                                {field.sensitive && <Lock className="h-3 w-3 text-yellow-500" />}
-                              </div>
-                              <Badge variant="outline">{field.type}</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  ) : null,
-                )}
-              </Accordion>
-            </ScrollArea>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setStep("userInfo")}>
-                Back
-              </Button>
-              <Button onClick={handleConnect} disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Connect
-              </Button>
-            </DialogFooter>
-          </>
-        )
-      case "connecting":
-        return (
-          <div className="flex flex-col items-center justify-center h-64">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <p className="mt-4 text-muted-foreground">Connecting to Qualys SSL Labs...</p>
-          </div>
-        )
-    }
-  }
+  const fieldCategories = useMemo(() => {
+    return allFields.reduce(
+      (acc, field) => {
+        const category = field.path.split(".")[0].replace(/\[\d+\]/g, "")
+        if (!acc[category]) acc[category] = []
+        acc[category].push(field)
+        return acc
+      },
+      {} as Record<string, any[]>,
+    )
+  }, [allFields])
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[625px]">
-        {renderStep()}
-        {error && <p className="text-sm text-red-500 mt-2 text-center">{error}</p>}
+      <DialogContent className="max-w-3xl w-full h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Connect {tool.name}</DialogTitle>
+          <DialogDescription>
+            {step === 1
+              ? "Please provide your information to set up the integration."
+              : "Select the data fields you want to sync."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === 1 && (
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  name="firstName"
+                  value={userInfo.firstName}
+                  onChange={handleUserInfoChange}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  name="lastName"
+                  value={userInfo.lastName}
+                  onChange={handleUserInfoChange}
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="workEmail">Work Email</Label>
+              <Input
+                id="workEmail"
+                name="workEmail"
+                type="email"
+                value={userInfo.workEmail}
+                onChange={handleUserInfoChange}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="organization">Organization</Label>
+              <Input
+                id="organization"
+                name="organization"
+                value={userInfo.organization}
+                onChange={handleUserInfoChange}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="targetHostname">Target Hostname</Label>
+              <Input id="targetHostname" value="autogrc.cloud" disabled />
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex justify-between items-center pb-2 border-b">
+              <h3 className="font-semibold">Configure Data Fields</h3>
+              <Badge>
+                {selectedFields.length} / {allFields.length} fields selected
+              </Badge>
+            </div>
+            <ScrollArea className="flex-grow my-4">
+              <Accordion type="multiple" defaultValue={Object.keys(fieldCategories)}>
+                {Object.entries(fieldCategories).map(([category, fields]) => (
+                  <AccordionItem key={category} value={category}>
+                    <AccordionTrigger className="capitalize">{category.replace(/([A-Z])/g, " $1")}</AccordionTrigger>
+                    <AccordionContent>
+                      <div className="space-y-2">
+                        {fields.map((field) => (
+                          <div key={field.path} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={field.path}
+                              checked={selectedFields.includes(field.path)}
+                              onCheckedChange={(checked) => {
+                                setSelectedFields((prev) =>
+                                  checked ? [...prev, field.path] : prev.filter((p) => p !== field.path),
+                                )
+                              }}
+                            />
+                            <label htmlFor={field.path} className="text-sm font-mono flex-1 truncate">
+                              {field.path}
+                            </label>
+                            {field.sensitive && <Lock className="h-3 w-3 text-yellow-500" />}
+                            <Badge variant="outline" className="text-xs">
+                              {field.type}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </ScrollArea>
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-500">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          {step === 1 && (
+            <Button onClick={handleNextStep} disabled={isLoading || !userInfo.workEmail}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Next
+            </Button>
+          )}
+          {step === 2 && (
+            <Button onClick={handleFinish} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Finish & Connect
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

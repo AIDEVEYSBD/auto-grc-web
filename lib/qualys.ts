@@ -1,46 +1,35 @@
-const SENSITIVE_KEYWORDS = ["key", "secret", "password", "email", "token", "address", "name", "subject"]
-
-export interface ExtractedField {
+interface FieldInfo {
   path: string
   type: string
   sensitive: boolean
   value: any
 }
 
-export const getFieldType = (value: any): string => {
-  if (Array.isArray(value)) return "array"
-  if (typeof value === "object" && value !== null) return "object"
-  return typeof value
-}
+const SENSITIVE_KEYS = ["key", "secret", "password", "email", "token", "ipaddress"]
 
-export const isSensitive = (path: string): boolean => {
-  const lowerPath = path.toLowerCase()
-  return SENSITIVE_KEYWORDS.some((keyword) => lowerPath.includes(keyword))
-}
-
-export const extractFields = (obj: any, prefix = ""): ExtractedField[] => {
-  let fields: ExtractedField[] = []
-
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      const newPrefix = prefix ? `${prefix}.${key}` : key
-      const value = obj[key]
-      const type = getFieldType(value)
-
-      fields.push({
-        path: newPrefix,
-        type,
-        sensitive: isSensitive(newPrefix),
-        value,
-      })
-
-      if (type === "object") {
-        fields = fields.concat(extractFields(value, newPrefix))
-      } else if (type === "array" && value.length > 0 && typeof value[0] === "object") {
-        // For arrays of objects, extract fields from the first object as a template
-        fields = fields.concat(extractFields(value[0], `${newPrefix}[0]`))
-      }
-    }
+export const extractFields = (obj: any, prefix = ""): FieldInfo[] => {
+  if (typeof obj !== "object" || obj === null) {
+    return []
   }
-  return fields
+
+  return Object.entries(obj).flatMap(([key, value]) => {
+    const currentPath = prefix ? `${prefix}.${key}` : key
+    const isSensitive = SENSITIVE_KEYS.some((k) => key.toLowerCase().includes(k))
+
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      return extractFields(value, currentPath)
+    } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === "object") {
+      // Handle array of objects by inspecting the first item
+      return extractFields(value[0], `${currentPath}[0]`)
+    } else {
+      return [
+        {
+          path: currentPath,
+          type: Array.isArray(value) ? "array" : typeof value,
+          sensitive: isSensitive,
+          value: value,
+        },
+      ]
+    }
+  })
 }

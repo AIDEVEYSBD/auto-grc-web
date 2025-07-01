@@ -4,18 +4,20 @@ export interface Integration {
   id: string
   name: string
   category: string
-  description: string
+  description?: string
+  linked_controls: string | null
   "is-connected": boolean
+  created_at: string
   config?: {
-    user?: {
+    userInfo?: {
       firstName: string
       lastName: string
       workEmail: string
       organization: string
-      targetHostname: string
     }
     selectedFields?: string[]
-  }
+    [key: string]: any // Allow other config properties
+  } | null
   connected_at?: string
   updated_at?: string
 }
