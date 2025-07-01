@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, type ChangeEvent, type DragEvent } from "r
 import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, CheckCircleIcon } from "@heroicons/react/24/outline"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useSearchParams } from "next/navigation"
 
 interface JobStatus {
   job_id: string
@@ -24,12 +23,9 @@ export default function SocMapperPage() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
+  const [checkJobId, setCheckJobId] = useState<string>("")
+  const [showJobCheck, setShowJobCheck] = useState(false)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
-
-  // ──────────────────────────────────────────────────────────
-  // URL ?test=true flag (safe both on server & client)
-  const searchParams = useSearchParams()
-  const isTestMode = searchParams?.get("test") === "true"
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -87,17 +83,17 @@ export default function SocMapperPage() {
       if (!response.ok) {
         throw new Error("Failed to fetch job status")
       }
-
+      
       const status: JobStatus = await response.json()
       setJobStatus(status)
-
+      
       // Handle completion
       if (status.status === "completed") {
         if (pollIntervalRef.current) {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
         }
-
+        
         // Auto-download the file
         const downloadUrl = `http://localhost:8000/download/${jobId}`
         const a = document.createElement("a")
@@ -106,7 +102,7 @@ export default function SocMapperPage() {
         document.body.appendChild(a)
         a.click()
         a.remove()
-
+        
         // Reset state after successful download
         setTimeout(() => {
           setIsUploading(false)
@@ -121,6 +117,8 @@ export default function SocMapperPage() {
         }
         setError(status.error || "Processing failed")
         setIsUploading(false)
+        setJobId(null)
+        setJobStatus(null)
       }
     } catch (err) {
       console.error("Error polling job status:", err)
@@ -149,8 +147,9 @@ export default function SocMapperPage() {
 
     try {
       // First, check if we're in test mode
+      const isTestMode = window.location.search.includes("test=true")
       const endpoint = isTestMode ? "http://localhost:8000/test" : "http://localhost:8000/process"
-
+      
       const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
@@ -187,7 +186,7 @@ export default function SocMapperPage() {
         // Production mode - job submission
         const result = await response.json()
         setJobId(result.job_id)
-
+        
         // Initial status
         setJobStatus({
           job_id: result.job_id,
@@ -196,12 +195,12 @@ export default function SocMapperPage() {
           stage: "Initializing",
           filename: file.name,
         })
-
+        
         // Start polling
         pollIntervalRef.current = setInterval(() => {
           pollJobStatus(result.job_id)
         }, 2000) // Poll every 2 seconds
-
+        
         // Immediate first poll
         pollJobStatus(result.job_id)
       }
@@ -220,7 +219,7 @@ export default function SocMapperPage() {
 
   const getStatusMessage = () => {
     if (!jobStatus) return "Uploading..."
-
+    
     switch (jobStatus.status) {
       case "queued":
         return "Job queued, waiting to start..."
@@ -312,8 +311,12 @@ export default function SocMapperPage() {
           ) : (
             <div className="space-y-4">
               <div className="text-center">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Processing {file?.name}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{getStatusMessage()}</p>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Processing {file?.name}
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {getStatusMessage()}
+                </p>
               </div>
 
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
@@ -324,7 +327,9 @@ export default function SocMapperPage() {
               </div>
 
               <div className="text-center">
-                <p className="text-sm text-gray-500 dark:text-gray-400">{jobStatus?.progress || 0}% complete</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {jobStatus?.progress || 0}% complete
+                </p>
                 {jobStatus?.status === "processing" && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                     This process can take up to 60 minutes depending on the document size.
@@ -333,19 +338,110 @@ export default function SocMapperPage() {
               </div>
 
               {jobStatus?.status === "completed" && (
-                <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
-                  <CheckCircleIcon className="h-5 w-5" />
-                  <span className="text-sm font-medium">Report generated successfully!</span>
+                <div className="mt-4">
+                  <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400">
+                    <CheckCircleIcon className="h-5 w-5" />
+                    <span className="text-sm font-medium">Report generated successfully!</span>
+                  </div>
+                  {jobId && (
+                    <div className="mt-2 text-center">
+                      <a
+                        href={`http://localhost:8000/download/${jobId}`}
+                        download={jobStatus.download_filename || "soc-mapping-report.xlsx"}
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        Click here if download didn't start automatically
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {jobStatus?.status === "failed" && error && (
+                <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <XCircleIcon className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-800 dark:text-red-300">Processing Failed</p>
+                      <p className="text-sm text-red-700 dark:text-red-400 mt-1">{error}</p>
+                      <button 
+                        onClick={() => {
+                          setIsUploading(false)
+                          setError(null)
+                          setJobStatus(null)
+                          setJobId(null)
+                        }}
+                        className="mt-2 text-sm text-red-600 dark:text-red-400 hover:underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           )}
-
+          
           <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center">
             <p>This will send the PDF to the backend for processing.</p>
             <p>The following parameters are hardcoded: pages 36-81, top_k=5.</p>
-            {isTestMode && (
-              <p className="mt-2 text-blue-600 dark:text-blue-400 font-medium">Test mode enabled – using mock data</p>
+            {window.location.search.includes("test=true") && (
+              <p className="mt-2 text-blue-600 dark:text-blue-400 font-medium">
+                Test mode enabled - using mock data
+              </p>
+            )}
+            
+            {!isUploading && !showJobCheck && (
+              <button
+                onClick={() => setShowJobCheck(true)}
+                className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Have an existing job ID? Check status
+              </button>
+            )}
+            
+            {showJobCheck && !isUploading && (
+              <div className="mt-4 space-y-2">
+                <input
+                  type="text"
+                  value={checkJobId}
+                  onChange={(e) => setCheckJobId(e.target.value)}
+                  placeholder="Enter job ID"
+                  className="w-full px-3 py-2 text-sm border rounded-md dark:bg-gray-800 dark:border-gray-600"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={async () => {
+                      if (checkJobId.trim()) {
+                        setIsUploading(true)
+                        setError(null)
+                        setJobId(checkJobId.trim())
+                        
+                        // Start polling
+                        pollIntervalRef.current = setInterval(() => {
+                          pollJobStatus(checkJobId.trim())
+                        }, 2000)
+                        
+                        // Immediate first poll
+                        pollJobStatus(checkJobId.trim())
+                      }
+                    }}
+                    disabled={!checkJobId.trim()}
+                    className="flex-1"
+                  >
+                    Check Status
+                  </Button>
+                  <button
+                    onClick={() => {
+                      setShowJobCheck(false)
+                      setCheckJobId("")
+                    }}
+                    className="px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
