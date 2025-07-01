@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useMemo } from "react"
 import {
   Dialog,
@@ -26,7 +25,7 @@ interface QualysRegistrationModalProps {
   isOpen: boolean
   onClose: () => void
   tool: Integration
-  onSuccess: () => void
+  onSuccess: (integrationId: string, config: any) => void
 }
 
 export default function QualysRegistrationModal({ isOpen, onClose, tool, onSuccess }: QualysRegistrationModalProps) {
@@ -67,19 +66,11 @@ export default function QualysRegistrationModal({ isOpen, onClose, tool, onSucce
     setIsLoading(true)
     setError(null)
     try {
-      const response = await fetch("/api/integrations/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          integrationId: tool.id,
-          config: { userInfo, selectedFields },
-        }),
-      })
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Failed to connect integration.")
-      }
-      onSuccess()
+      // This is the urgent fix: instead of calling a failing API,
+      // we call the onSuccess callback directly with the configuration.
+      // This will store the connection state in the browser's session storage.
+      const config = { userInfo, selectedFields }
+      onSuccess(tool.id, config)
     } catch (err: any) {
       setError(err.message)
     } finally {

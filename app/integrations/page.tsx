@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import {
   WrenchScrewdriverIcon,
@@ -20,6 +20,7 @@ import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
 import type { KPIData, Integration } from "@/types"
 
 const QUALYS_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
+const SESSION_STORAGE_KEY = "temp_connected_integrations"
 
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -30,8 +31,36 @@ export default function IntegrationsPage() {
   }>({})
   const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
 
-  const { data: allIntegrations, isLoading, error, mutate } = useIntegrations()
-  const kpis = useIntegrationKPIs(allIntegrations)
+  // SWR hook to get initial data from Supabase
+  const { data: initialIntegrations, isLoading, error } = useIntegrations()
+
+  // Local state to hold the merged data (Supabase + Session Storage)
+  const [liveIntegrations, setLiveIntegrations] = useState<Integration[]>([])
+
+  // Effect to merge initial data with session storage data on load
+  useEffect(() => {
+    if (initialIntegrations) {
+      try {
+        const tempConnections = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "{}")
+        const merged = initialIntegrations.map((integ) => {
+          if (tempConnections[integ.id]) {
+            return {
+              ...integ,
+              "is-connected": true,
+              config: tempConnections[integ.id].config,
+            }
+          }
+          return integ
+        })
+        setLiveIntegrations(merged)
+      } catch (e) {
+        console.error("Failed to parse session storage JSON:", e)
+        setLiveIntegrations(initialIntegrations)
+      }
+    }
+  }, [initialIntegrations])
+
+  const kpis = useIntegrationKPIs(liveIntegrations)
 
   const handleModalClose = useCallback(() => {
     setModalState({})
@@ -47,15 +76,31 @@ export default function IntegrationsPage() {
     }
   }, [])
 
-  const handleSuccess = useCallback(() => {
-    mutate() // Re-fetches the integration data
-    handleModalClose()
-  }, [mutate, handleModalClose])
+  // This function now handles the temporary connection logic
+  const handleSuccess = useCallback(
+    (integrationId: string, config: any) => {
+      // 1. Update session storage
+      try {
+        const tempConnections = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "{}")
+        tempConnections[integrationId] = { config }
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(tempConnections))
+      } catch (e) {
+        console.error("Failed to update session storage:", e)
+      }
+
+      // 2. Update live local state to trigger an immediate re-render
+      setLiveIntegrations((prev) =>
+        prev.map((integ) => (integ.id === integrationId ? { ...integ, "is-connected": true, config } : integ)),
+      )
+
+      // 3. Close the modal
+      handleModalClose()
+    },
+    [handleModalClose],
+  )
 
   const connectedIntegrations = useMemo(() => {
-    if (!allIntegrations) return []
-
-    let filtered = allIntegrations.filter((i) => i["is-connected"])
+    let filtered = liveIntegrations.filter((i) => i["is-connected"])
 
     if (searchQuery) {
       const lowercasedQuery = searchQuery.toLowerCase()
@@ -67,7 +112,7 @@ export default function IntegrationsPage() {
       )
     }
     return filtered
-  }, [allIntegrations, searchQuery])
+  }, [liveIntegrations, searchQuery])
 
   const integrationsByCategory = useMemo(() => {
     return connectedIntegrations.reduce(
@@ -199,7 +244,7 @@ export default function IntegrationsPage() {
         isOpen={!!modalState.marketplace}
         onClose={handleModalClose}
         onAddTool={handleAddTool}
-        integrations={allIntegrations || []}
+        integrations={liveIntegrations}
       />
 
       {selectedTool && (
