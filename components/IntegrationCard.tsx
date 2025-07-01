@@ -1,56 +1,38 @@
 "use client"
 
-import { ArrowPathIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline"
-import { CheckCircleIcon as CheckCircleIconSolid, ExclamationTriangleIcon } from "@heroicons/react/24/solid"
 import { memo } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import type { Integration } from "@/types"
+import QualysSSLIntegrationCard from "./QualysSSLIntegrationCard"
 
 interface IntegrationCardProps {
   integration: Integration
-  className?: string
+  onConnect?: (integration: Integration) => void
 }
 
-function IntegrationCard({ integration, className = "" }: IntegrationCardProps) {
-  const isConnected = integration["is-connected"] === true
+const QUALYS_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
 
-  const getStatusIcon = () => {
-    if (isConnected) {
-      return <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
-    } else {
-      return <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
-    }
+function IntegrationCard({ integration, onConnect }: IntegrationCardProps) {
+  if (integration.id === QUALYS_ID && integration["is-connected"]) {
+    return <QualysSSLIntegrationCard integration={integration} />
   }
 
-  const getStatusText = () => (isConnected ? "Connected" : "Disconnected")
-
-  const getStatusColor = () =>
-    isConnected
-      ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-
   return (
-    <div className={`glass-card p-6 hover:shadow-lg transition-shadow ${className}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-3 flex-1">
-          {getStatusIcon()}
-          <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-gray-900 dark:text-white text-base mb-1">{integration.name}</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-              {integration.description || `${integration.category} integration`}
-            </p>
-          </div>
+    <Card>
+      <CardHeader>
+        <div className="flex justify-between items-start">
+          <CardTitle>{integration.name}</CardTitle>
+          {integration["is-connected"] && <Badge variant="secondary">Connected</Badge>}
         </div>
-        <div className="flex items-center gap-2 ml-4">
-          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor()}`}>{getStatusText()}</span>
-          <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
-            <ArrowPathIcon className="h-4 w-4 text-gray-500" />
-          </button>
-          <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
-            <EllipsisVerticalIcon className="h-4 w-4 text-gray-500" />
-          </button>
-        </div>
-      </div>
-    </div>
+        <CardDescription>{integration.description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!integration["is-connected"] && onConnect && <Button onClick={() => onConnect(integration)}>Connect</Button>}
+        {integration["is-connected"] && <p className="text-sm text-muted-foreground">This integration is connected.</p>}
+      </CardContent>
+    </Card>
   )
 }
 
