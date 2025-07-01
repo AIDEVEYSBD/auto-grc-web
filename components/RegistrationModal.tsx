@@ -60,7 +60,8 @@ export default function RegistrationModal({ isOpen, onClose, tool }: Registratio
                   </Dialog.Title>
                   <button
                     onClick={onClose}
-                    className="p-1 rounded-full text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    type="button"
+                    className="p-1 rounded-full text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     <XMarkIcon className="h-5 w-5" />
                   </button>
