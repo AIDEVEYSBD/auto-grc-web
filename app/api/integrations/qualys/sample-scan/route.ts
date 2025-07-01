@@ -3,6 +3,26 @@ import { type NextRequest, NextResponse } from "next/server"
 const QUALYS_API_BASE = "https://api.ssllabs.com/api/v4"
 const SAMPLE_HOST = "autogrc.cloud"
 
+// Helper function to safely parse JSON responses
+async function safeJsonParse(response: Response) {
+  const contentType = response.headers.get("content-type")
+
+  if (contentType && contentType.includes("application/json")) {
+    try {
+      return await response.json()
+    } catch (error) {
+      console.error("JSON parsing error:", error)
+      const text = await response.text()
+      console.error("Response text:", text)
+      throw new Error("Invalid JSON response from API")
+    }
+  } else {
+    const text = await response.text()
+    console.error("Non-JSON response:", text)
+    throw new Error("Expected JSON response but received: " + contentType)
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -20,14 +40,23 @@ export async function POST(request: NextRequest) {
     })
 
     if (!startResponse.ok) {
-      const errorData = await startResponse.json()
+      let errorData
+      try {
+        errorData = await safeJsonParse(startResponse)
+      } catch (parseError) {
+        return NextResponse.json(
+          { error: `Failed to start scan (HTTP ${startResponse.status})` },
+          { status: startResponse.status },
+        )
+      }
+
       return NextResponse.json(
-        { error: errorData.errors?.[0]?.message || "Failed to start scan" },
+        { error: errorData.errors?.[0]?.message || errorData.message || "Failed to start scan" },
         { status: startResponse.status },
       )
     }
 
-    const startData = await startResponse.json()
+    const startData = await safeJsonParse(startResponse)
 
     // Poll for completion (with timeout)
     let attempts = 0
@@ -44,14 +73,22 @@ export async function POST(request: NextRequest) {
       })
 
       if (pollResponse.ok) {
-        scanData = await pollResponse.json()
+        try {
+          scanData = await safeJsonParse(pollResponse)
+        } catch (parseError) {
+          console.error("Error parsing poll response:", parseError)
+          // Continue with previous data
+        }
       }
 
       attempts++
     }
 
     if (scanData.status === "ERROR") {
-      return NextResponse.json({ error: "Scan failed: " + scanData.statusMessage }, { status: 400 })
+      return NextResponse.json(
+        { error: "Scan failed: " + (scanData.statusMessage || "Unknown error") },
+        { status: 400 },
+      )
     }
 
     if (scanData.status !== "READY") {
@@ -113,6 +150,11 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Sample scan error:", error)
+
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

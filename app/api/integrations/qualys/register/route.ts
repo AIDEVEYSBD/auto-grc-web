@@ -42,22 +42,76 @@ export async function POST(request: NextRequest) {
       }),
     })
 
-    const data = await response.json()
+    // Handle non-JSON responses
+    const contentType = response.headers.get("content-type")
+    let data
 
-    if (!response.ok) {
+    if (contentType && contentType.includes("application/json")) {
+      data = await response.json()
+    } else {
+      const textResponse = await response.text()
+      console.error("Non-JSON response from Qualys:", textResponse)
+
+      // If it's an HTML error page or plain text, create a structured error
+      if (textResponse.includes("already registered") || textResponse.toLowerCase().includes("email")) {
+        // Email already registered - this is actually OK, we can proceed
+        return NextResponse.json({
+          success: true,
+          message: "Email already registered - proceeding with existing registration",
+          email: email,
+          alreadyRegistered: true,
+        })
+      }
+
       return NextResponse.json(
-        { error: data.errors?.[0]?.message || "Registration failed" },
+        {
+          error: "Invalid response from Qualys API. Please try again.",
+        },
+        { status: 500 },
+      )
+    }
+
+    // Handle specific Qualys error responses
+    if (!response.ok) {
+      // Check if it's an "already registered" error
+      if (
+        response.status === 400 &&
+        (data.errors?.[0]?.message?.includes("already registered") || data.message?.includes("already registered"))
+      ) {
+        // Email already registered - this is OK, we can proceed
+        return NextResponse.json({
+          success: true,
+          message: "Email already registered - proceeding with existing registration",
+          email: email,
+          alreadyRegistered: true,
+        })
+      }
+
+      return NextResponse.json(
+        { error: data.errors?.[0]?.message || data.message || "Registration failed" },
         { status: response.status },
       )
     }
 
     return NextResponse.json({
       success: true,
-      message: data.message,
-      email: email, // Return email for use in subsequent requests
+      message: data.message || "Registration successful",
+      email: email,
+      alreadyRegistered: false,
     })
   } catch (error) {
     console.error("Qualys registration error:", error)
+
+    // Handle JSON parsing errors specifically
+    if (error instanceof SyntaxError && error.message.includes("JSON")) {
+      return NextResponse.json(
+        {
+          error: "Invalid response format from Qualys API. Please try again.",
+        },
+        { status: 500 },
+      )
+    }
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
