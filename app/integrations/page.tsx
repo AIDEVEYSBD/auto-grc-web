@@ -1,235 +1,79 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
-import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
-import {
-  WrenchScrewdriverIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  CircleStackIcon,
-} from "@heroicons/react/24/solid"
-import KpiTile from "@/components/KpiTile"
+import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { createClient } from "@/lib/supabase"
 import IntegrationCard from "@/components/IntegrationCard"
 import MarketplaceModal from "@/components/MarketplaceModal"
-import RegistrationModal from "@/components/RegistrationModal"
-import { CardSkeleton } from "@/components/LoadingSkeleton"
-import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
-import type { KPIData, Integration } from "@/types"
-// Import the new components
-import QualysRegistrationModal from "@/components/QualysRegistrationModal"
+import { Loader2 } from "lucide-react"
+import type { Integration } from "@/types"
 import QualysSSLIntegrationCard from "@/components/QualysSSLIntegrationCard"
-import { useSWRConfig } from "swr"
 
-// Inside the IntegrationsPage component
+const QUALYS_SSL_LABS_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
+
 export default function IntegrationsPage() {
-  // ... existing state
-  const [searchQuery, setSearchQuery] = useState("")
-  const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
-  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false)
-  const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
-  const [isQualysModalOpen, setIsQualysModalOpen] = useState(false)
-  const { mutate } = useSWRConfig()
+  const [integrations, setIntegrations] = useState<Integration[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isMarketplaceOpen, setMarketplaceOpen] = useState(false)
 
-  const { data: allIntegrations, isLoading, error } = useIntegrations()
-
-  const kpis = useIntegrationKPIs(allIntegrations)
-
-  const filteredAndSearchedIntegrations = useMemo(() => {
-    // Always filter for connected tools using "is-connected"
-    let filtered = allIntegrations.filter((i) => i["is-connected"] === true)
-
-    // Apply search query
-    if (searchQuery) {
-      const lowercasedQuery = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (integration) =>
-          integration.name.toLowerCase().includes(lowercasedQuery) ||
-          (integration.description && integration.description.toLowerCase().includes(lowercasedQuery)) ||
-          integration.category.toLowerCase().includes(lowercasedQuery),
-      )
+  const fetchIntegrations = async () => {
+    setIsLoading(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.from("integrations").select("*").order("name")
+    if (data) {
+      setIntegrations(data)
     }
-    return filtered
-  }, [allIntegrations, searchQuery])
-
-  const integrationsByCategory = useMemo(() => {
-    return filteredAndSearchedIntegrations.reduce(
-      (acc, integration) => {
-        const category = integration.category
-        if (!acc[category]) acc[category] = []
-        acc[category].push(integration)
-        return acc
-      },
-      {} as Record<string, Integration[]>,
-    )
-  }, [filteredAndSearchedIntegrations])
-
-  const kpiData: KPIData[] = useMemo(
-    () => [
-      { label: "Tool Categories", value: kpis.categories, icon: WrenchScrewdriverIcon, color: "blue" },
-      { label: "Connected Tools", value: kpis.connected, icon: CheckCircleIcon, color: "green" },
-      { label: "Need Attention", value: kpis.needAttention, icon: ExclamationTriangleIcon, color: "yellow" },
-      { label: "Data Points", value: kpis.totalDatapoints.toLocaleString(), icon: CircleStackIcon, color: "purple" },
-    ],
-    [kpis],
-  )
-
-  const handleOpenMarketplace = useCallback(() => setIsMarketplaceOpen(true), [])
-  const handleCloseMarketplace = useCallback(() => setIsMarketplaceOpen(false), [])
-
-  const handleAddTool = useCallback((tool: Integration) => {
-    setSelectedTool(tool)
-    setIsMarketplaceOpen(false)
-    setIsRegistrationOpen(true) // Placeholder for registration flow
-    // In a real app, you'd likely trigger a server action here to mark the tool as connected
-    console.log("Attempting to add tool:", tool.name)
-  }, [])
-
-  const handleCloseRegistration = useCallback(() => {
-    setIsRegistrationOpen(false)
-    setSelectedTool(null)
-    // Optionally re-open marketplace or refresh data
-    // setIsMarketplaceOpen(true);
-  }, [])
-
-  const handleAddQualysTool = useCallback((tool: Integration) => {
-    setSelectedTool(tool)
-    setIsMarketplaceOpen(false)
-    setIsQualysModalOpen(true)
-  }, [])
-
-  const handleCloseQualysModal = useCallback(() => {
-    setIsQualysModalOpen(false)
-    setSelectedTool(null)
-  }, [])
-
-  const handleQualysSuccess = useCallback(() => {
-    // Revalidate the integrations data to show the new connected card
-    mutate("integrations")
-  }, [mutate])
-
-  // ... existing loading/error states
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <CardSkeleton key={i} />
-          ))}
-        </div>
-        <div className="space-y-8 mt-8">
-          <CardSkeleton className="h-24" />
-          <CardSkeleton className="h-24" />
-        </div>
-      </div>
-    )
+    if (error) {
+      console.error("Error fetching integrations:", error)
+    }
+    setIsLoading(false)
   }
 
-  if (error) {
-    return (
-      <div className="text-center py-20">
-        <h3 className="text-lg font-medium text-red-600 dark:text-red-400">Failed to load integrations</h3>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">
-          Please check your network connection and Supabase configuration.
-        </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">Error: {error.message}</p>
-      </div>
-    )
-  }
+  useEffect(() => {
+    fetchIntegrations()
+  }, [])
+
+  const connectedIntegrations = integrations.filter((i) => i["is-connected"])
 
   return (
-    <>
-      <div className="space-y-6 p-6 pb-20">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Security Integrations</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              Manage your connected cybersecurity tools across all categories
-            </p>
-          </div>
-          <button
-            onClick={handleOpenMarketplace}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Browse Marketplace
-          </button>
-        </div>
+    <div className="container mx-auto p-4 md:p-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Integrations</h1>
+        <Button onClick={() => setMarketplaceOpen(true)}>Add New Integration</Button>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {kpiData.map((kpi, index) => (
-            <KpiTile key={index} data={kpi} />
-          ))}
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin" />
         </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search connected tools..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-8">
-          {Object.keys(integrationsByCategory).length > 0 ? (
-            Object.entries(integrationsByCategory).map(([category, integrations]) => (
-              <div key={category}>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide">
-                  {category}
-                </h2>
-                <div className="space-y-4">
-                  {integrations.map((integration) =>
-                    integration.id === "b3f4ff74-56c1-4321-b137-690b939e454a" && integration["is-connected"] ? (
-                      <QualysSSLIntegrationCard key={integration.id} integration={integration} />
-                    ) : (
-                      <IntegrationCard key={integration.id} integration={integration} />
-                    ),
-                  )}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-12">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Connected Tools Found</h3>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">
-                {searchQuery
-                  ? "No connected tools match your search criteria."
-                  : "No connected tools found. Browse the marketplace to add new tools."}
-              </p>
-              <button
-                onClick={handleOpenMarketplace}
-                className="mt-4 flex mx-auto items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <PlusIcon className="h-4 w-4" />
-                Browse Marketplace
-              </button>
-            </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {connectedIntegrations.map((integration) =>
+            integration.id === QUALYS_SSL_LABS_ID ? (
+              <QualysSSLIntegrationCard key={integration.id} integration={integration} />
+            ) : (
+              <IntegrationCard key={integration.id} integration={integration} />
+            ),
           )}
         </div>
-      </div>
+      )}
+
+      {connectedIntegrations.length === 0 && !isLoading && (
+        <div className="text-center py-16 border-2 border-dashed rounded-lg">
+          <h2 className="text-xl font-semibold">No integrations connected</h2>
+          <p className="text-gray-500 mt-2">Connect a new integration to get started.</p>
+          <Button className="mt-4" onClick={() => setMarketplaceOpen(true)}>
+            Add Integration
+          </Button>
+        </div>
+      )}
 
       <MarketplaceModal
         isOpen={isMarketplaceOpen}
-        onClose={handleCloseMarketplace}
-        onAddTool={handleAddTool}
-        onAddQualysTool={handleAddQualysTool} // Pass the new handler
-        integrations={allIntegrations} // Pass all integrations to the marketplace modal
+        onClose={() => setMarketplaceOpen(false)}
+        integrations={integrations}
+        onConnect={fetchIntegrations}
       />
-
-      <RegistrationModal isOpen={isRegistrationOpen} onClose={handleCloseRegistration} tool={selectedTool} />
-      {selectedTool && (
-        <QualysRegistrationModal
-          isOpen={isQualysModalOpen}
-          onClose={handleCloseQualysModal}
-          tool={selectedTool}
-          onSuccess={handleQualysSuccess}
-        />
-      )}
-    </>
+    </div>
   )
 }

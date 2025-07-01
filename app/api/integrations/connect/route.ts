@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase"
 
 export async function POST(request: Request) {
+  const supabase = createClient()
   try {
-    const body = await request.json()
-    const { integrationId, config } = body
+    const { integrationId, user, selectedFields } = await request.json()
 
-    if (!integrationId || !config) {
-      return NextResponse.json({ error: "Missing integrationId or config" }, { status: 400 })
+    if (!integrationId || !user || !selectedFields) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const config = {
+      user,
+      selectedFields,
     }
 
     const { data, error } = await supabase
@@ -19,15 +24,16 @@ export async function POST(request: Request) {
       })
       .eq("id", integrationId)
       .select()
+      .single()
 
     if (error) {
-      console.error("Supabase update error:", error)
+      console.error("Supabase error:", error)
       throw error
     }
 
     return NextResponse.json(data)
   } catch (error) {
-    console.error("Failed to connect integration:", error)
-    return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 })
+    console.error("Connect integration error:", error)
+    return NextResponse.json({ error: "Failed to connect integration." }, { status: 500 })
   }
 }
