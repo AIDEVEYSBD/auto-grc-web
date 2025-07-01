@@ -1,27 +1,70 @@
-import { createClient as createBrowserClient, type SupabaseClient } from "@supabase/supabase-js"
+import { createClient } from "@supabase/supabase-js"
+import type {
+  Application,
+  Framework,
+  Control,
+  ComplianceAssessment,
+  FrameworkMapping,
+  Integration,
+  Capability,
+} from "@/types"
 
-/**
- * Singleton browser-side Supabase client.
- * Uses NEXT_PUBLIC_* env vars that are already available in Next.js.
- */
-let _supabase: SupabaseClient | null = null
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-export function createClient(): SupabaseClient {
-  if (_supabase) return _supabase
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!url || !anon) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY")
-  }
-
-  _supabase = createBrowserClient(url, anon)
-  return _supabase
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables")
 }
 
-/**
- * Convenience export so you can:
- *   import { supabase } from "@/lib/supabase"
- */
-export const supabase = createClient()
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+})
+
+// Type-safe database interface
+export type Database = {
+  public: {
+    Tables: {
+      applications: {
+        Row: Application
+      }
+      frameworks: {
+        Row: Framework
+      }
+      controls: {
+        Row: Control
+      }
+      compliance_assessment: {
+        Row: ComplianceAssessment
+      }
+      framework_mappings: {
+        Row: FrameworkMapping
+      }
+      integrations: {
+        Row: Integration
+      }
+      capabilities: {
+        Row: Capability
+      }
+    }
+  }
+}
+
+// Connection health check
+export const checkSupabaseConnection = async () => {
+  try {
+    const { data, error } = await supabase.from("frameworks").select("count").limit(1)
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error("Supabase connection error:", error)
+    return false
+  }
+}

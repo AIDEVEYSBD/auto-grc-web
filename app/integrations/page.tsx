@@ -59,7 +59,7 @@ export default function IntegrationsPage() {
     () => [
       { label: "Tool Categories", value: kpis.categories, icon: WrenchScrewdriverIcon, color: "blue" },
       { label: "Connected Tools", value: kpis.connected, icon: CheckCircleIcon, color: "green" },
-      { label: "Available to Connect", value: kpis.needAttention, icon: ExclamationTriangleIcon, color: "yellow" },
+      { label: "Need Attention", value: kpis.needAttention, icon: ExclamationTriangleIcon, color: "yellow" },
       { label: "Data Points", value: kpis.totalDatapoints.toLocaleString(), icon: CircleStackIcon, color: "purple" },
     ],
     [kpis],
