@@ -3,23 +3,23 @@ import type React from "react"
 export interface Integration {
   id: string
   name: string
-  category: string
+  type: string
+  status: "active" | "inactive" | "error"
   description?: string
-  linked_controls: string | null // This is a UUID, not a count.
-  "is-connected": boolean // Corrected from is_connected to is-connected
-  created_at: string
+  last_sync?: string
+  config?: Record<string, any>
 }
 
 export interface KPIData {
   label: string
   value: string | number
-  icon: React.ForwardRefExoticComponent<
+  icon?: React.ForwardRefExoticComponent<
     Omit<React.SVGProps<SVGSVGElement>, "ref"> & {
       title?: string | undefined
       titleId?: string | undefined
     } & React.RefAttributes<SVGSVGElement>
   >
-  color: "blue" | "green" | "yellow" | "purple"
+  color?: "blue" | "green" | "yellow" | "purple"
 }
 
 export type FilterType = "all" | "connected" | "disconnected"
@@ -27,9 +27,10 @@ export type FilterType = "all" | "connected" | "disconnected"
 export interface Framework {
   id: string
   name: string
-  version: string
   description?: string
-  controls_count: number
+  version?: string
+  status?: string
+  controls_count?: number
   created_at: string
   updated_at: string
 }
@@ -41,15 +42,16 @@ export interface Control {
   title: string
   description?: string
   category?: string
-  created_at: string
 }
 
 export interface Assessment {
   id: string
   name: string
   framework_id: string
-  status: "draft" | "in_progress" | "completed"
-  progress: number
+  application_id: string
+  status: string
+  score?: number
+  progress?: number
   created_at: string
   updated_at: string
 }
@@ -58,23 +60,23 @@ export interface Application {
   id: string
   name: string
   description?: string
-  owner: string
-  criticality: "low" | "medium" | "high" | "critical"
-  frameworks: string[]
-  last_assessment: string
-  compliance_score: number
+  owner_email: string
+  criticality: string
+  "cloud-provider": string
+  overall_score: number
+  applicability?: string | null
   created_at: string
 }
 
 export interface Mapping {
   id: string
-  source_framework: string
-  target_framework: string
-  source_control: string
-  target_control: string
-  mapping_type: "exact" | "partial" | "related"
-  confidence: number
-  created_at: string
+  source_framework_id: string
+  target_framework_id: string
+  source_control_id: string
+  target_control_id: string
+  mapping_type: string
+  confidence?: number
+  created_at?: string
 }
 
 export interface Capability {
@@ -92,4 +94,9 @@ export interface MarketplaceTool {
   category: string
   description: string
   logo: string
+}
+
+export interface ApplicabilityCategory {
+  id: string
+  category_name: string
 }
