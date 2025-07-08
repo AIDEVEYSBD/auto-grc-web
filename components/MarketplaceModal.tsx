@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useMemo } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -28,13 +28,11 @@ import {
   Activity,
 } from "lucide-react"
 import type { Integration } from "@/types"
-import { ScrollArea } from "./ui/scroll-area"
 
 interface MarketplaceModalProps {
   isOpen: boolean
   onClose: () => void
   integrations: Integration[]
-  onAddTool: (tool: Integration) => void
 }
 
 const categoryIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -56,16 +54,20 @@ const categoryIcons: Record<string, React.ComponentType<{ className?: string }>>
   Default: Zap,
 }
 
-export default function MarketplaceModal({ isOpen, onClose, integrations, onAddTool }: MarketplaceModalProps) {
+export default function MarketplaceModal({ isOpen, onClose, integrations }: MarketplaceModalProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
-  const marketplaceTools = useMemo(() => integrations.filter((tool) => !tool["is-connected"]), [integrations])
-  const categories = useMemo(
-    () => Array.from(new Set(marketplaceTools.map((tool) => tool.category))).sort(),
-    [marketplaceTools],
-  )
+  // Filter to show only disconnected tools (marketplace tools)
+  const marketplaceTools = integrations.filter((tool) => !tool["is-connected"])
 
+  // Get unique categories for filter dropdown
+  const categories = useMemo(() => {
+    const uniqueCategories = Array.from(new Set(marketplaceTools.map((tool) => tool.category)))
+    return uniqueCategories.sort()
+  }, [marketplaceTools])
+
+  // Filter tools based on search and category
   const filteredTools = useMemo(() => {
     return marketplaceTools.filter((tool) => {
       const matchesSearch =
@@ -76,20 +78,28 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onAddT
     })
   }, [marketplaceTools, searchTerm, selectedCategory])
 
-  const getIconForCategory = (category: string) => categoryIcons[category] || categoryIcons["Default"]
+  const handleAddTool = (toolId: string) => {
+    // Placeholder for add tool functionality
+    console.log("Adding tool:", toolId)
+    // TODO: Implement server action to update is-connected to true
+  }
+
+  const getIconForCategory = (category: string) => {
+    const IconComponent = categoryIcons[category] || categoryIcons["Default"]
+    return IconComponent
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl w-full h-[80vh] flex flex-col z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-0 shadow-2xl">
+      <DialogContent className="max-w-6xl w-full h-[80vh] flex flex-col z-50 bg-white/95 backdrop-blur-sm border-0 shadow-2xl">
         <DialogHeader className="border-b pb-4">
           <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Security Tools Marketplace
           </DialogTitle>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Discover and connect security tools to enhance your compliance posture
-          </p>
+          <p className="text-gray-600 mt-2">Discover and connect security tools to enhance your compliance posture</p>
         </DialogHeader>
 
+        {/* Search and Filter Controls */}
         <div className="flex flex-col sm:flex-row gap-4 py-4 border-b">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -115,7 +125,8 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onAddT
           </Select>
         </div>
 
-        <ScrollArea className="flex-1">
+        {/* Tools Grid */}
+        <div className="flex-1 overflow-y-auto">
           {filteredTools.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-1">
               {filteredTools.map((tool) => {
@@ -123,7 +134,7 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onAddT
                 return (
                   <div
                     key={tool.id}
-                    className="bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-all duration-200 hover:border-blue-300 dark:hover:border-blue-500 flex flex-col"
+                    className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200 hover:border-blue-300"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
@@ -131,21 +142,23 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onAddT
                           <IconComponent className="h-5 w-5 text-white" />
                         </div>
                         <div>
-                          <h3 className="font-semibold text-gray-900 dark:text-white">{tool.name}</h3>
+                          <h3 className="font-semibold text-gray-900">{tool.name}</h3>
                           <Badge variant="secondary" className="text-xs">
                             {tool.category}
                           </Badge>
                         </div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2 flex-grow">
-                      {tool.description}
-                    </p>
+
+                    {tool.description && <p className="text-sm text-gray-600 mb-4 line-clamp-2">{tool.description}</p>}
+
                     <Button
-                      onClick={() => onAddTool(tool)}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white mt-auto"
+                      onClick={() => handleAddTool(tool.id)}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                      size="sm"
                     >
-                      <Plus className="h-4 w-4 mr-2" /> Add Tool
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Tool
                     </Button>
                   </div>
                 )
@@ -154,24 +167,25 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onAddT
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Search className="h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No tools found</h3>
-              <p className="text-gray-600 dark:text-gray-400">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No tools found</h3>
+              <p className="text-gray-600">
                 {searchTerm || selectedCategory !== "all"
                   ? "Try adjusting your search or filter criteria"
                   : "No marketplace tools available at the moment"}
               </p>
             </div>
           )}
-        </ScrollArea>
+        </div>
 
-        <DialogFooter className="border-t pt-4 flex justify-between items-center">
-          <span className="text-sm text-gray-600 dark:text-gray-400">
+        {/* Footer */}
+        <div className="border-t pt-4 flex justify-between items-center text-sm text-gray-600">
+          <span>
             Showing {filteredTools.length} of {marketplaceTools.length} tools
           </span>
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

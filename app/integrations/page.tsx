@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { PlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import {
   WrenchScrewdriverIcon,
@@ -8,100 +8,29 @@ import {
   ExclamationTriangleIcon,
   CircleStackIcon,
 } from "@heroicons/react/24/solid"
-
 import KpiTile from "@/components/KpiTile"
 import IntegrationCard from "@/components/IntegrationCard"
 import MarketplaceModal from "@/components/MarketplaceModal"
 import RegistrationModal from "@/components/RegistrationModal"
-import QualysRegistrationModal from "@/components/QualysRegistrationModal"
-import QualysSSLIntegrationCard from "@/components/QualysSSLIntegrationCard"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
 import type { KPIData, Integration } from "@/types"
 
-const QUALYS_ID = "b3f4ff74-56c1-4321-b137-690b939e454a"
-const SESSION_STORAGE_KEY = "temp_connected_integrations"
-
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [modalState, setModalState] = useState<{
-    marketplace?: boolean
-    registration?: boolean
-    qualys?: boolean
-  }>({})
+  const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false)
   const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
 
-  // SWR hook to get initial data from Supabase
-  const { data: initialIntegrations, isLoading, error } = useIntegrations()
+  const { data: allIntegrations, isLoading, error } = useIntegrations()
 
-  // Local state to hold the merged data (Supabase + Session Storage)
-  const [liveIntegrations, setLiveIntegrations] = useState<Integration[]>([])
+  const kpis = useIntegrationKPIs(allIntegrations)
 
-  // Effect to merge initial data with session storage data on load
-  useEffect(() => {
-    if (initialIntegrations) {
-      try {
-        const tempConnections = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "{}")
-        const merged = initialIntegrations.map((integ) => {
-          if (tempConnections[integ.id]) {
-            return {
-              ...integ,
-              "is-connected": true,
-              config: tempConnections[integ.id].config,
-            }
-          }
-          return integ
-        })
-        setLiveIntegrations(merged)
-      } catch (e) {
-        console.error("Failed to parse session storage JSON:", e)
-        setLiveIntegrations(initialIntegrations)
-      }
-    }
-  }, [initialIntegrations])
+  const filteredAndSearchedIntegrations = useMemo(() => {
+    // Always filter for connected tools using "is-connected"
+    let filtered = allIntegrations.filter((i) => i["is-connected"] === true)
 
-  const kpis = useIntegrationKPIs(liveIntegrations)
-
-  const handleModalClose = useCallback(() => {
-    setModalState({})
-    setSelectedTool(null)
-  }, [])
-
-  const handleAddTool = useCallback((tool: Integration) => {
-    setSelectedTool(tool)
-    if (tool.id === QUALYS_ID) {
-      setModalState({ qualys: true })
-    } else {
-      setModalState({ registration: true })
-    }
-  }, [])
-
-  // This function now handles the temporary connection logic
-  const handleSuccess = useCallback(
-    (integrationId: string, config: any) => {
-      // 1. Update session storage
-      try {
-        const tempConnections = JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "{}")
-        tempConnections[integrationId] = { config }
-        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(tempConnections))
-      } catch (e) {
-        console.error("Failed to update session storage:", e)
-      }
-
-      // 2. Update live local state to trigger an immediate re-render
-      setLiveIntegrations((prev) =>
-        prev.map((integ) => (integ.id === integrationId ? { ...integ, "is-connected": true, config } : integ)),
-      )
-
-      // 3. Close the modal
-      handleModalClose()
-    },
-    [handleModalClose],
-  )
-
-  const connectedIntegrations = useMemo(() => {
-    let filtered = liveIntegrations.filter((i) => i["is-connected"])
-
+    // Apply search query
     if (searchQuery) {
       const lowercasedQuery = searchQuery.toLowerCase()
       filtered = filtered.filter(
@@ -112,10 +41,10 @@ export default function IntegrationsPage() {
       )
     }
     return filtered
-  }, [liveIntegrations, searchQuery])
+  }, [allIntegrations, searchQuery])
 
   const integrationsByCategory = useMemo(() => {
-    return connectedIntegrations.reduce(
+    return filteredAndSearchedIntegrations.reduce(
       (acc, integration) => {
         const category = integration.category
         if (!acc[category]) acc[category] = []
@@ -124,7 +53,7 @@ export default function IntegrationsPage() {
       },
       {} as Record<string, Integration[]>,
     )
-  }, [connectedIntegrations])
+  }, [filteredAndSearchedIntegrations])
 
   const kpiData: KPIData[] = useMemo(
     () => [
@@ -135,6 +64,24 @@ export default function IntegrationsPage() {
     ],
     [kpis],
   )
+
+  const handleOpenMarketplace = useCallback(() => setIsMarketplaceOpen(true), [])
+  const handleCloseMarketplace = useCallback(() => setIsMarketplaceOpen(false), [])
+
+  const handleAddTool = useCallback((tool: Integration) => {
+    setSelectedTool(tool)
+    setIsMarketplaceOpen(false)
+    setIsRegistrationOpen(true) // Placeholder for registration flow
+    // In a real app, you'd likely trigger a server action here to mark the tool as connected
+    console.log("Attempting to add tool:", tool.name)
+  }, [])
+
+  const handleCloseRegistration = useCallback(() => {
+    setIsRegistrationOpen(false)
+    setSelectedTool(null)
+    // Optionally re-open marketplace or refresh data
+    // setIsMarketplaceOpen(true);
+  }, [])
 
   if (isLoading) {
     return (
@@ -175,7 +122,7 @@ export default function IntegrationsPage() {
             </p>
           </div>
           <button
-            onClick={() => setModalState({ marketplace: true })}
+            onClick={handleOpenMarketplace}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg"
           >
             <PlusIcon className="h-4 w-4" />
@@ -210,13 +157,9 @@ export default function IntegrationsPage() {
                   {category}
                 </h2>
                 <div className="space-y-4">
-                  {integrations.map((integration) =>
-                    integration.id === QUALYS_ID ? (
-                      <QualysSSLIntegrationCard key={integration.id} integration={integration} />
-                    ) : (
-                      <IntegrationCard key={integration.id} integration={integration} />
-                    ),
-                  )}
+                  {integrations.map((integration) => (
+                    <IntegrationCard key={integration.id} integration={integration} />
+                  ))}
                 </div>
               </div>
             ))
@@ -226,10 +169,10 @@ export default function IntegrationsPage() {
               <p className="text-gray-500 dark:text-gray-400 mt-2">
                 {searchQuery
                   ? "No connected tools match your search criteria."
-                  : "Browse the marketplace to add new tools."}
+                  : "No connected tools found. Browse the marketplace to add new tools."}
               </p>
               <button
-                onClick={() => setModalState({ marketplace: true })}
+                onClick={handleOpenMarketplace}
                 className="mt-4 flex mx-auto items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <PlusIcon className="h-4 w-4" />
@@ -241,28 +184,13 @@ export default function IntegrationsPage() {
       </div>
 
       <MarketplaceModal
-        isOpen={!!modalState.marketplace}
-        onClose={handleModalClose}
+        isOpen={isMarketplaceOpen}
+        onClose={handleCloseMarketplace}
         onAddTool={handleAddTool}
-        integrations={liveIntegrations}
+        integrations={allIntegrations} // Pass all integrations to the marketplace modal
       />
 
-      {selectedTool && (
-        <>
-          <RegistrationModal
-            isOpen={!!modalState.registration}
-            onClose={handleModalClose}
-            tool={selectedTool}
-            onSuccess={handleSuccess}
-          />
-          <QualysRegistrationModal
-            isOpen={!!modalState.qualys}
-            onClose={handleModalClose}
-            tool={selectedTool}
-            onSuccess={handleSuccess}
-          />
-        </>
-      )}
+      <RegistrationModal isOpen={isRegistrationOpen} onClose={handleCloseRegistration} tool={selectedTool} />
     </>
   )
 }

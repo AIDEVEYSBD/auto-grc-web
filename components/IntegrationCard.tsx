@@ -1,22 +1,42 @@
 "use client"
 
-import { ArrowPathIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline"
+import { ArrowPathIcon, EllipsisVerticalIcon, PlusIcon } from "@heroicons/react/24/outline"
 import { CheckCircleIcon as CheckCircleIconSolid, ExclamationTriangleIcon } from "@heroicons/react/24/solid"
 import { memo } from "react"
 import type { Integration } from "@/types"
 
 interface IntegrationCardProps {
-  integration: Integration
+  integration?: Integration
+  isAddButton?: boolean
+  onAddClick?: () => void
   className?: string
 }
 
-function IntegrationCard({ integration, className = "" }: IntegrationCardProps) {
+function IntegrationCard({ integration, isAddButton = false, onAddClick, className = "" }: IntegrationCardProps) {
+  if (isAddButton) {
+    return (
+      <button
+        onClick={onAddClick}
+        className={`glass-card p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500 transition-colors flex flex-col items-center justify-center min-h-[120px] group ${className}`}
+      >
+        <PlusIcon className="h-8 w-8 text-gray-400 group-hover:text-blue-500 mb-2" />
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+          Add Tool
+        </span>
+      </button>
+    )
+  }
+
+  if (!integration) return null
+
+  // Use "is-connected" property
   const isConnected = integration["is-connected"] === true
 
   const getStatusIcon = () => {
     if (isConnected) {
       return <CheckCircleIconSolid className="h-5 w-5 text-green-500" />
     } else {
+      // For disconnected tools, we'll use a warning icon as per the screenshot's "Warning" status
       return <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500" />
     }
   }
@@ -26,7 +46,7 @@ function IntegrationCard({ integration, className = "" }: IntegrationCardProps) 
   const getStatusColor = () =>
     isConnected
       ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" // Using yellow for "Disconnected" to match "Warning" in screenshot
 
   return (
     <div className={`glass-card p-6 hover:shadow-lg transition-shadow ${className}`}>
