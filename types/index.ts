@@ -8,6 +8,9 @@ export interface Integration {
   description?: string
   last_sync?: string
   config?: Record<string, any>
+  category: string
+  "is-connected": boolean
+  endpoint?: string | null
 }
 
 export interface KPIData {

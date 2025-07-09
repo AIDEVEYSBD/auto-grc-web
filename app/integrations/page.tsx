@@ -12,17 +12,23 @@ import KpiTile from "@/components/KpiTile"
 import IntegrationCard from "@/components/IntegrationCard"
 import MarketplaceModal from "@/components/MarketplaceModal"
 import RegistrationModal from "@/components/RegistrationModal"
+import DisconnectConfirmModal from "@/components/DisconnectConfirmModal"
+import ReconfigureModal from "@/components/ReconfigureModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
+import { supabase } from "@/lib/supabase"
 import type { KPIData, Integration } from "@/types"
 
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isMarketplaceOpen, setIsMarketplaceOpen] = useState(false)
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false)
+  const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false)
+  const [isReconfigureModalOpen, setIsReconfigureModalOpen] = useState(false)
   const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
+  const [isProcessing, setIsProcessing] = useState<string | null>(null)
 
-  const { data: allIntegrations, isLoading, error } = useIntegrations()
+  const { data: allIntegrations, isLoading, error, mutate } = useIntegrations()
 
   const kpis = useIntegrationKPIs(allIntegrations)
 
@@ -81,6 +87,135 @@ export default function IntegrationsPage() {
     setSelectedTool(null)
     // Optionally re-open marketplace or refresh data
     // setIsMarketplaceOpen(true);
+  }, [])
+
+  const handleRunTool = useCallback(
+    async (integration: Integration) => {
+      if (!integration.endpoint) {
+        console.warn("No endpoint available for", integration.name)
+        return
+      }
+
+      setIsProcessing(integration.id)
+
+      try {
+        console.log(`Running tool: ${integration.name} at endpoint: ${integration.endpoint}`)
+
+        // Make the API call to the tool's endpoint
+        const response = await fetch(integration.endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          // You might want to include authentication headers or other config here
+          body: JSON.stringify({
+            tool_id: integration.id,
+            timestamp: new Date().toISOString(),
+          }),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log(`Tool ${integration.name} executed successfully:`, result)
+
+          // Update last_sync timestamp
+          await supabase.from("integrations").update({ last_sync: new Date().toISOString() }).eq("id", integration.id)
+
+          // Refresh the data
+          mutate()
+
+          // You could show a success toast here
+          alert(`Tool "${integration.name}" executed successfully!`)
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+      } catch (error) {
+        console.error(`Failed to run tool ${integration.name}:`, error)
+        alert(`Failed to run tool "${integration.name}". Please check the console for details.`)
+      } finally {
+        setIsProcessing(null)
+      }
+    },
+    [mutate],
+  )
+
+  const handleDisconnectClick = useCallback((integration: Integration) => {
+    setSelectedTool(integration)
+    setIsDisconnectModalOpen(true)
+  }, [])
+
+  const handleDisconnectConfirm = useCallback(async () => {
+    if (!selectedTool) return
+
+    setIsProcessing(selectedTool.id)
+
+    try {
+      const { error } = await supabase.from("integrations").update({ "is-connected": false }).eq("id", selectedTool.id)
+
+      if (error) {
+        throw error
+      }
+
+      console.log(`Disconnected tool: ${selectedTool.name}`)
+
+      // Refresh the data
+      mutate()
+
+      // Close modal
+      setIsDisconnectModalOpen(false)
+      setSelectedTool(null)
+    } catch (error) {
+      console.error(`Failed to disconnect tool ${selectedTool.name}:`, error)
+      alert(`Failed to disconnect tool "${selectedTool.name}". Please try again.`)
+    } finally {
+      setIsProcessing(null)
+    }
+  }, [selectedTool, mutate])
+
+  const handleReconfigureClick = useCallback((integration: Integration) => {
+    setSelectedTool(integration)
+    setIsReconfigureModalOpen(true)
+  }, [])
+
+  const handleReconfigureSave = useCallback(
+    async (endpoint: string) => {
+      if (!selectedTool) return
+
+      setIsProcessing(selectedTool.id)
+
+      try {
+        const { error } = await supabase.from("integrations").update({ endpoint }).eq("id", selectedTool.id)
+
+        if (error) {
+          throw error
+        }
+
+        console.log(`Updated endpoint for tool: ${selectedTool.name}`)
+
+        // Refresh the data
+        mutate()
+
+        // Close modal
+        setIsReconfigureModalOpen(false)
+        setSelectedTool(null)
+      } catch (error) {
+        console.error(`Failed to update endpoint for tool ${selectedTool.name}:`, error)
+        alert(`Failed to update endpoint for tool "${selectedTool.name}". Please try again.`)
+      } finally {
+        setIsProcessing(null)
+      }
+    },
+    [selectedTool, mutate],
+  )
+
+  const handleCloseDisconnectModal = useCallback(() => {
+    setIsDisconnectModalOpen(false)
+    setSelectedTool(null)
+  }, [])
+
+  const handleCloseReconfigureModal = useCallback(() => {
+    setIsReconfigureModalOpen(false)
+    setSelectedTool(null)
   }, [])
 
   if (isLoading) {
@@ -158,7 +293,14 @@ export default function IntegrationsPage() {
                 </h2>
                 <div className="space-y-4">
                   {integrations.map((integration) => (
-                    <IntegrationCard key={integration.id} integration={integration} />
+                    <IntegrationCard
+                      key={integration.id}
+                      integration={integration}
+                      onRunTool={handleRunTool}
+                      onDisconnect={handleDisconnectClick}
+                      onReconfigure={handleReconfigureClick}
+                      className={isProcessing === integration.id ? "opacity-50 pointer-events-none" : ""}
+                    />
                   ))}
                 </div>
               </div>
@@ -191,6 +333,22 @@ export default function IntegrationsPage() {
       />
 
       <RegistrationModal isOpen={isRegistrationOpen} onClose={handleCloseRegistration} tool={selectedTool} />
+
+      <DisconnectConfirmModal
+        isOpen={isDisconnectModalOpen}
+        onClose={handleCloseDisconnectModal}
+        onConfirm={handleDisconnectConfirm}
+        integration={selectedTool}
+        isProcessing={isProcessing === selectedTool?.id}
+      />
+
+      <ReconfigureModal
+        isOpen={isReconfigureModalOpen}
+        onClose={handleCloseReconfigureModal}
+        onSave={handleReconfigureSave}
+        integration={selectedTool}
+        isProcessing={isProcessing === selectedTool?.id}
+      />
     </>
   )
 }
