@@ -58,7 +58,7 @@ export default function FrameworkBaselinerPage() {
 
   const pollJobStatus = async (jobId: string) => {
     try {
-      const response = await fetch(`http://localhost:8003/jobs/${jobId}`)
+      const response = await fetch(`https://cortexgrc.onrender.com/jobs/${jobId}`)
       if (response.ok) {
         const jobData = await response.json()
         setCurrentJob(jobData)
@@ -96,7 +96,7 @@ export default function FrameworkBaselinerPage() {
       formData.append("top_k", "5")
       formData.append("generate_excel", generateExcel.toString())
 
-      const response = await fetch("http://localhost:8003/framework/compare", {
+      const response = await fetch("https://cortexgrc.onrender.com/framework/compare", {
         method: "POST",
         body: formData,
       })

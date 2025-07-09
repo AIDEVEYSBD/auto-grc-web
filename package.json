@@ -47,7 +47,7 @@
     "framer-motion": "^10.16.0",
     "input-otp": "latest",
     "lucide-react": "^0.454.0",
-    "next": "^14.2.30",
+    "next": "14.2.16",
     "next-themes": "latest",
     "react": "^18",
     "react-day-picker": "latest",
@@ -67,7 +67,7 @@
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
-    "eslint-config-next": "^14.0.0",
+    "eslint-config-next": "14.0.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"

@@ -328,8 +328,8 @@ export default function IntegrationsPage() {
       <MarketplaceModal
         isOpen={isMarketplaceOpen}
         onClose={handleCloseMarketplace}
-        onAddTool={handleAddTool}
         integrations={allIntegrations} // Pass all integrations to the marketplace modal
+        onRefresh={mutate}
       />
 
       <RegistrationModal isOpen={isRegistrationOpen} onClose={handleCloseRegistration} tool={selectedTool} />
