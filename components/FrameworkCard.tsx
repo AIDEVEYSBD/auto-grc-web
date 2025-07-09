@@ -1,87 +1,54 @@
 "use client"
 
-import { StarIcon } from "@heroicons/react/24/solid"
-import ProgressBar from "./ProgressBar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { CalendarIcon, DocumentTextIcon } from "@heroicons/react/24/outline"
 import type { Framework } from "@/types"
 
 interface FrameworkCardProps {
-  framework: Framework & {
-    controlCount?: number
-    overlap?: {
-      mapped: number
-      percentage: number
-    }
-  }
-  onSetMaster: (id: string) => void
+  framework: Framework
   onClick?: (framework: Framework) => void
-  className?: string
 }
 
-export default function FrameworkCard({ framework, onSetMaster, onClick, className = "" }: FrameworkCardProps) {
-  const total = framework.controlCount || 0
-  const overlap = framework.overlap
+export default function FrameworkCard({ framework, onClick }: FrameworkCardProps) {
+  const handleClick = () => {
+    if (onClick) {
+      onClick(framework)
+    }
+  }
 
   return (
-    <div
-      className={`glass-card p-6 hover:shadow-xl transition-shadow relative overflow-hidden cursor-pointer ${
-        framework.master ? "border-blue-500/50" : ""
-      } ${className}`}
-      onClick={() => onClick?.(framework)}
+    <Card
+      className="hover:shadow-lg transition-all duration-200 cursor-pointer hover:scale-[1.02] glass-card"
+      onClick={handleClick}
     >
-      {framework.master && (
-        <div className="absolute top-0 right-0 px-4 py-1 bg-blue-600 text-white text-xs font-bold rounded-bl-lg">
-          MASTER
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white line-clamp-2">
+            {framework.name}
+          </CardTitle>
+          <Badge variant={framework.status === "active" ? "default" : "secondary"} className="ml-2 shrink-0">
+            {framework.status || "active"}
+          </Badge>
         </div>
-      )}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{framework.name}</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {framework.version ? `Version ${framework.version}` : "No version"}
-          </p>
-        </div>
-        {!framework.master && overlap && (
-          <span className="text-xl font-bold text-gray-700 dark:text-gray-300">{overlap.percentage}%</span>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        {framework.master ? (
-          <div className="text-center py-4 h-24 flex flex-col justify-center">
-            <p className="text-5xl font-bold text-gray-900 dark:text-white">{total}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Total Controls</p>
-          </div>
-        ) : (
-          <div className="h-24 flex flex-col justify-center">
-            {overlap && (
-              <>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {overlap.mapped} of {total} controls mapped
-                  </span>
-                  <span className="font-medium">{overlap.percentage}%</span>
-                </div>
-                <ProgressBar value={overlap.percentage} />
-              </>
-            )}
-          </div>
+        {framework.version && <p className="text-sm text-gray-600 dark:text-gray-400">Version {framework.version}</p>}
+      </CardHeader>
+      <CardContent className="pt-0">
+        {framework.description && (
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-3">{framework.description}</p>
         )}
 
-        <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700/50">
-          <span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded">
-            {total} controls
-          </span>
-          {!framework.master && (
-            <button
-              onClick={() => onSetMaster(framework.id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
-            >
-              <StarIcon className="h-3 w-3" />
-              Set Master
-            </button>
-          )}
+        <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-1">
+            <DocumentTextIcon className="h-4 w-4" />
+            <span>{framework.controls_count || 0} controls</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <CalendarIcon className="h-4 w-4" />
+            <span>{new Date(framework.created_at).toLocaleDateString()}</span>
+          </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   )
 }
