@@ -40,7 +40,6 @@ export interface Control {
   framework_id: string
   ID: string // This is the control_id field in the database
   title: string
-  Controls?: string // This is the control text field
   description?: string
   Domain?: string
   category?: string
