@@ -222,8 +222,8 @@ export default function FrameworkControlsModal({ isOpen, onClose, framework }: F
                               {control.Domain || "N/A"}
                             </td>
                             <td className="py-3 px-4 text-sm text-gray-900 dark:text-white max-w-md">
-                              <div className="truncate" title={control.title}>
-                                {control.title}
+                              <div className="truncate" title={control.Controls}>
+                                {control.Controls}
                               </div>
                             </td>
                             {applicabilityCategories.map((category) => (
