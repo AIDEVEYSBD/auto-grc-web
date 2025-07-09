@@ -38,9 +38,10 @@ export interface Framework {
 export interface Control {
   id: string
   framework_id: string
-  control_id: string
+  ID: string // This is the control_id field in the database
   title: string
   description?: string
+  Domain?: string
   category?: string
 }
 

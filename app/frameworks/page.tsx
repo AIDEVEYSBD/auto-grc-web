@@ -12,6 +12,8 @@ import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useFrameworks, useFrameworkKPIs, setMasterFramework, createFramework } from "@/lib/queries/frameworks"
 import { useFrameworkMappings } from "@/lib/queries/mappings"
 import type { KPIData } from "@/types"
+import FrameworkControlsModal from "@/components/FrameworkControlsModal"
+import type { Framework } from "@/types"
 
 export default function FrameworksPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
@@ -20,6 +22,9 @@ export default function FrameworksPage() {
   const { totalControls, controls: allControls } = useFrameworkKPIs()
 
   const isLoading = frameworksLoading || mappingsLoading
+
+  const [selectedFramework, setSelectedFramework] = useState<Framework | null>(null)
+  const [isControlsModalOpen, setIsControlsModalOpen] = useState(false)
 
   const frameworkData = useMemo(() => {
     if (!frameworks || !mappings || !allControls) return []
@@ -105,6 +110,16 @@ export default function FrameworksPage() {
     mutate("all-controls")
   }
 
+  const handleFrameworkClick = (framework: Framework) => {
+    setSelectedFramework(framework)
+    setIsControlsModalOpen(true)
+  }
+
+  const handleControlsModalClose = () => {
+    setIsControlsModalOpen(false)
+    setSelectedFramework(null)
+  }
+
   const kpiData: KPIData[] = [
     { label: "Total Frameworks", value: frameworkData.length, icon: DocumentTextIcon, color: "blue" },
     { label: "Total Controls", value: totalControls, icon: ShieldCheckIcon, color: "green" },
@@ -133,6 +148,11 @@ export default function FrameworksPage() {
   return (
     <>
       <UploadFrameworkModal isOpen={isUploadModalOpen} onClose={handleModalClose} onUpload={handleUpload} />
+      <FrameworkControlsModal
+        isOpen={isControlsModalOpen}
+        onClose={handleControlsModalClose}
+        framework={selectedFramework}
+      />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -159,7 +179,12 @@ export default function FrameworksPage() {
         {/* Framework Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {frameworkData.map((framework) => (
-            <FrameworkCard key={framework.id} framework={framework} onSetMaster={handleSetMaster} />
+            <FrameworkCard
+              key={framework.id}
+              framework={framework}
+              onSetMaster={handleSetMaster}
+              onClick={handleFrameworkClick}
+            />
           ))}
         </div>
 

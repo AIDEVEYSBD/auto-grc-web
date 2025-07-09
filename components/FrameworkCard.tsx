@@ -13,18 +13,20 @@ interface FrameworkCardProps {
     }
   }
   onSetMaster: (id: string) => void
+  onClick?: (framework: Framework) => void
   className?: string
 }
 
-export default function FrameworkCard({ framework, onSetMaster, className = "" }: FrameworkCardProps) {
+export default function FrameworkCard({ framework, onSetMaster, onClick, className = "" }: FrameworkCardProps) {
   const total = framework.controlCount || 0
   const overlap = framework.overlap
 
   return (
     <div
-      className={`glass-card p-6 hover:shadow-xl transition-shadow relative overflow-hidden ${
+      className={`glass-card p-6 hover:shadow-xl transition-shadow relative overflow-hidden cursor-pointer ${
         framework.master ? "border-blue-500/50" : ""
       } ${className}`}
+      onClick={() => onClick?.(framework)}
     >
       {framework.master && (
         <div className="absolute top-0 right-0 px-4 py-1 bg-blue-600 text-white text-xs font-bold rounded-bl-lg">
