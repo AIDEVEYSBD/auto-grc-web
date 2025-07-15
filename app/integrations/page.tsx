@@ -19,8 +19,6 @@ import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
 import { supabase } from "@/lib/supabase"
 import type { KPIData, Integration } from "@/types"
-import SSLCard from "@/components/SSLcard"
-
 
 export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -329,7 +327,6 @@ export default function IntegrationsPage() {
             />
           </div>
         </div>
-        <SSLCard className="mt-6" />
 
         <div className="space-y-8">
           {Object.keys(integrationsByCategory).length > 0 ? (

@@ -1,5 +1,7 @@
 "use client"
 
+import React from "react"
+
 import { useState, useMemo } from "react"
 import { ViewColumnsIcon, Squares2X2Icon, FunnelIcon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
@@ -7,12 +9,13 @@ import DataTable from "@/components/DataTable"
 import ProgressBar from "@/components/ProgressBar"
 import ApplicabilityDropdown from "@/components/ApplicabilityDropdown"
 import { CardSkeleton, TableSkeleton } from "@/components/LoadingSkeleton"
-import { useApplications, useApplicationKPIs } from "@/lib/queries/applications"
+import { useApplications } from "@/lib/queries/applications"
 import { useApplicabilityCategories } from "@/lib/queries/applicability"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { supabase } from "@/lib/supabase"
 import type { KPIData } from "@/types"
 
 export default function ApplicationsPage() {
@@ -25,10 +28,77 @@ export default function ApplicationsPage() {
     scoreRange: { min: 0, max: 100 },
   })
   const [showFilters, setShowFilters] = useState(false)
+  const [applicationsWithScores, setApplicationsWithScores] = useState<any[]>([])
+  const [isLoadingScores, setIsLoadingScores] = useState(false)
 
   const { data: applications, isLoading } = useApplications()
   const { data: applicabilityCategories, isLoading: categoriesLoading } = useApplicabilityCategories()
-  const kpis = useApplicationKPIs()
+
+  // CIS Framework UUID
+  const CIS_FRAMEWORK_UUID = "ba74fa54-9650-47d0-b9c6-0973a4a35d70"
+
+  // Fetch CIS scores for applications
+  const fetchApplicationScores = async () => {
+    if (!applications || applications.length === 0) return
+
+    setIsLoadingScores(true)
+    try {
+      const appsWithScores = await Promise.all(
+        applications.map(async (app) => {
+          // Get CIS compliance assessment scores for this application
+          const { data: assessments, error } = await supabase
+            .from("compliance_assessment")
+            .select("score")
+            .eq("application_id", app.id)
+            .eq("mapped_from", CIS_FRAMEWORK_UUID)
+
+          let cisScore = 0
+          if (!error && assessments && assessments.length > 0) {
+            // Calculate average score from all CIS assessments for this application
+            const totalScore = assessments.reduce((sum, assessment) => sum + (assessment.score || 0), 0)
+            cisScore = Math.round(totalScore / assessments.length)
+          }
+
+          return {
+            ...app,
+            overall_score: cisScore,
+          }
+        }),
+      )
+
+      setApplicationsWithScores(appsWithScores)
+    } catch (error) {
+      console.error("Error fetching CIS scores:", error)
+      setApplicationsWithScores(applications.map((app) => ({ ...app, overall_score: 0 })))
+    } finally {
+      setIsLoadingScores(false)
+    }
+  }
+
+  // Fetch scores when applications data is available
+  React.useEffect(() => {
+    if (applications && applications.length > 0) {
+      fetchApplicationScores()
+    }
+  }, [applications])
+
+  // Calculate KPIs based on applications with CIS scores
+  const kpis = useMemo(() => {
+    const total = applicationsWithScores?.length || 0
+    const compliant = applicationsWithScores?.filter((app) => app.overall_score >= 80).length || 0
+    const warning =
+      applicationsWithScores?.filter((app) => app.overall_score >= 50 && app.overall_score < 80).length || 0
+    const critical = applicationsWithScores?.filter((app) => app.overall_score < 50).length || 0
+    const avgScore = total > 0 ? applicationsWithScores?.reduce((sum, app) => sum + app.overall_score, 0) / total : 0
+
+    return {
+      total,
+      compliant,
+      warning,
+      critical,
+      avgScore: Math.round(avgScore || 0),
+    }
+  }, [applicationsWithScores])
 
   const kpiData: KPIData[] = [
     {
@@ -48,7 +118,7 @@ export default function ApplicationsPage() {
       value: kpis.critical,
     },
     {
-      label: "Avg Score",
+      label: "Avg CIS Score",
       value: kpis.avgScore > 0 ? `${kpis.avgScore}%` : "-",
     },
   ]
@@ -61,20 +131,20 @@ export default function ApplicationsPage() {
 
   // Get unique values for filter dropdowns
   const uniqueValues = useMemo(() => {
-    if (!applications) return { criticalities: [], cloudProviders: [], owners: [] }
+    if (!applicationsWithScores) return { criticalities: [], cloudProviders: [], owners: [] }
 
-    const criticalities = [...new Set(applications.map((app) => app.criticality).filter(Boolean))]
-    const cloudProviders = [...new Set(applications.map((app) => app["cloud-provider"]).filter(Boolean))]
-    const owners = [...new Set(applications.map((app) => app.owner_email).filter(Boolean))]
+    const criticalities = [...new Set(applicationsWithScores.map((app) => app.criticality).filter(Boolean))]
+    const cloudProviders = [...new Set(applicationsWithScores.map((app) => app["cloud-provider"]).filter(Boolean))]
+    const owners = [...new Set(applicationsWithScores.map((app) => app.owner_email).filter(Boolean))]
 
     return { criticalities, cloudProviders, owners }
-  }, [applications])
+  }, [applicationsWithScores])
 
   // Filter applications
   const filteredApplications = useMemo(() => {
-    if (!applications) return []
+    if (!applicationsWithScores) return []
 
-    return applications.filter((app) => {
+    return applicationsWithScores.filter((app) => {
       // Name filter
       if (filters.name && !app.name?.toLowerCase().includes(filters.name.toLowerCase())) {
         return false
@@ -103,7 +173,7 @@ export default function ApplicationsPage() {
 
       return true
     })
-  }, [applications, filters])
+  }, [applicationsWithScores, filters])
 
   const handleFilterChange = (key: string, value: any) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -171,21 +241,21 @@ export default function ApplicationsPage() {
     },
     {
       key: "overall_score",
-      label: "Overall Score",
+      label: "CIS Score",
       sortable: true,
       render: (value: number, row: any) => {
         const score = value || 0
         return (
           <div className="flex items-center gap-2">
             <ProgressBar value={score} className="w-20" />
-            <span className="text-sm font-medium min-w-[40px]">{score > 0 ? `${Math.round(score)}%` : "0%"}</span>
+            <span className="text-sm font-medium min-w-[40px]">{score > 0 ? `${score}%` : "0%"}</span>
           </div>
         )
       },
     },
   ]
 
-  if (isLoading) {
+  if (isLoading || isLoadingScores) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -199,24 +269,24 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="space-y-6 h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center justify-between flex-shrink-0 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Applications</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Monitor compliance across all your applications</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Monitor CIS compliance across all your applications</p>
         </div>
       </div>
 
       {/* KPI Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 flex-shrink-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 flex-shrink-0 mb-6">
         {kpiData.map((kpi, index) => (
           <KpiTile key={index} data={kpi} />
         ))}
       </div>
 
       {/* Filters and View Toggle */}
-      <div className="glass-card p-4 flex-shrink-0">
+      <div className="glass-card p-4 flex-shrink-0 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <Button
@@ -241,7 +311,7 @@ export default function ApplicationsPage() {
             )}
 
             <span className="text-sm text-gray-600 dark:text-gray-400">
-              {filteredApplications.length} of {applications?.length || 0} applications
+              {filteredApplications.length} of {applicationsWithScores?.length || 0} applications
             </span>
           </div>
 
@@ -378,11 +448,13 @@ export default function ApplicationsPage() {
         )}
       </div>
 
-      {/* Applications Data */}
-      <div className="flex-1 min-h-0">
+      {/* Applications Data - Scrollable Container */}
+      <div className="flex-1 min-h-0 overflow-hidden">
         {viewMode === "table" ? (
-          <div className="h-full">
-            <DataTable data={filteredApplications} columns={columns} loading={isLoading} />
+          <div className="h-full overflow-auto">
+            <div className="glass-card">
+              <DataTable data={filteredApplications} columns={columns} loading={isLoading || isLoadingScores} />
+            </div>
           </div>
         ) : (
           <div className="h-full overflow-y-auto">
@@ -418,8 +490,8 @@ export default function ApplicationsPage() {
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Overall Score</span>
-                        <span className="font-medium">{score > 0 ? `${Math.round(score)}%` : "0%"}</span>
+                        <span className="text-gray-600 dark:text-gray-400">CIS Score</span>
+                        <span className="font-medium">{score > 0 ? `${score}%` : "0%"}</span>
                       </div>
                       <ProgressBar value={score} />
 
