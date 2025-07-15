@@ -8,6 +8,7 @@ import { useSupabaseQuery } from "@/lib/swr-client"
 import { supabase } from "@/lib/supabase"
 import LoadingSkeleton from "./LoadingSkeleton"
 import type { Control } from "@/types"
+import { useApplications } from "@/lib/queries/applications"
 
 interface DonutStripProps {
   className?: string
@@ -19,52 +20,53 @@ export default function DonutStrip({ className = "" }: DonutStripProps) {
   const { data: allControls, isLoading: controlsLoading } = useSupabaseQuery<Control>("all-controls", () =>
     supabase.from("controls").select("*"),
   )
+  const { data: applications, isLoading: applicationsLoading } = useApplications()
 
   const frameworkData = useMemo(() => {
-    if (!frameworks || !assessments || !allControls) return []
+    if (!frameworks || !assessments || !applications) return []
 
     return frameworks.map((framework) => {
-      // Get controls for this framework
-      const frameworkControls = allControls.filter((control) => control.framework_id === framework.id)
-      const totalControls = frameworkControls.length
+      // Get all assessments for this framework across all applications
+      const frameworkAssessments = assessments.filter((assessment) => assessment.mapped_from === framework.id)
 
-      // Get unique assessments for controls in this framework (avoid duplicates)
-      const frameworkControlIds = frameworkControls.map((control) => control.id)
+      // Group assessments by application
+      const applicationScores = new Map<string, number[]>()
 
-      // Create a map to store the best assessment for each control
-      const controlAssessmentMap = new Map()
-
-      assessments.forEach((assessment) => {
-        if (frameworkControlIds.includes(assessment.control_id)) {
-          const existingAssessment = controlAssessmentMap.get(assessment.control_id)
-          // Keep the assessment with the highest score for each control
-          if (!existingAssessment || assessment.score > existingAssessment.score) {
-            controlAssessmentMap.set(assessment.control_id, assessment)
-          }
+      frameworkAssessments.forEach((assessment) => {
+        if (!applicationScores.has(assessment.application_id)) {
+          applicationScores.set(assessment.application_id, [])
         }
+        applicationScores.get(assessment.application_id)!.push(assessment.score)
       })
 
-      const uniqueAssessments = Array.from(controlAssessmentMap.values())
+      // Calculate average score for each application
+      const applicationAverages: number[] = []
+      applicationScores.forEach((scores, applicationId) => {
+        const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length
+        applicationAverages.push(avgScore) // Convert to percentage
+      })
 
-      // Count passed and partial assessments
-      const passedAssessments = uniqueAssessments.filter((assessment) => assessment.score >= 0.8).length
-      const partialAssessments = uniqueAssessments.filter(
-        (assessment) => assessment.score >= 0.4 && assessment.score < 0.8,
-      ).length
+      // Calculate overall average across all applications for this framework
+      const overallAverage =
+        applicationAverages.length > 0
+          ? applicationAverages.reduce((sum, avg) => sum + avg, 0) / applicationAverages.length
+          : 0
 
-      const compliantControls = passedAssessments + partialAssessments
-      const compliancePercentage = totalControls > 0 ? Math.round((compliantControls / totalControls) * 100) : 0
+      // Get total controls for this framework for display purposes
+      const frameworkControls = allControls?.filter((control) => control.framework_id === framework.id) || []
+      const totalControls = frameworkControls.length
+      const compliantControls = Math.round((overallAverage / 100) * totalControls)
 
       return {
         name: framework.name,
         value: compliantControls,
         total: totalControls,
-        percentage: compliancePercentage,
+        percentage: Math.round(overallAverage),
       }
     })
-  }, [frameworks, assessments, allControls])
+  }, [frameworks, assessments, applications, allControls])
 
-  if (frameworksLoading || assessmentsLoading || controlsLoading) {
+  if (frameworksLoading || assessmentsLoading || controlsLoading || applicationsLoading) {
     return (
       <div className={`glass-card p-8 ${className}`}>
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Framework Compliance</h3>
