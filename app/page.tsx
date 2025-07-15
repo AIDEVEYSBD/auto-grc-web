@@ -29,31 +29,47 @@ export default function OverviewPage() {
     supabase.from("controls").select("*"),
   )
 
-  // Calculate framework compliance from live data
+  // Calculate framework compliance from live data using the same logic as DonutStrip
   const frameworkCompliance = useMemo(() => {
     if (!frameworkKPIs.frameworks || !assessments || !allControls) return []
 
     return frameworkKPIs.frameworks.map((framework) => {
+      // Get controls for this framework
       const frameworkControls = allControls.filter((control) => control.framework_id === framework.id)
-
-      // Get assessments that are mapped from this framework
-      const frameworkAssessments = assessments.filter((assessment) => assessment.mapped_from === framework.id)
-
       const totalControls = frameworkControls.length
 
-      // Count controls with passing scores (assuming score >= 0.8 is passing, >= 0.4 is partial)
-      const passingAssessments = frameworkAssessments.filter((a) => a.score >= 0.8)
-      const partialAssessments = frameworkAssessments.filter((a) => a.score >= 0.4 && a.score < 0.8)
+      // Get unique assessments for controls in this framework (avoid duplicates)
+      const frameworkControlIds = frameworkControls.map((control) => control.id)
 
-      const passedControls = passingAssessments.length + partialAssessments.length
+      // Create a map to store the best assessment for each control
+      const controlAssessmentMap = new Map()
 
-      const compliance = totalControls > 0 ? Math.round((passedControls / totalControls) * 100) : 0
+      assessments.forEach((assessment) => {
+        if (frameworkControlIds.includes(assessment.control_id)) {
+          const existingAssessment = controlAssessmentMap.get(assessment.control_id)
+          // Keep the assessment with the highest score for each control
+          if (!existingAssessment || assessment.score > existingAssessment.score) {
+            controlAssessmentMap.set(assessment.control_id, assessment)
+          }
+        }
+      })
+
+      const uniqueAssessments = Array.from(controlAssessmentMap.values())
+
+      // Count passed and partial assessments
+      const passedAssessments = uniqueAssessments.filter((assessment) => assessment.score >= 0.8).length
+      const partialAssessments = uniqueAssessments.filter(
+        (assessment) => assessment.score >= 0.4 && assessment.score < 0.8,
+      ).length
+
+      const compliantControls = passedAssessments + partialAssessments
+      const compliance = totalControls > 0 ? Math.round((compliantControls / totalControls) * 100) : 0
 
       return {
         framework,
         compliance,
         totalControls,
-        passedControls,
+        passedControls: compliantControls,
       }
     })
   }, [frameworkKPIs.frameworks, assessments, allControls])
