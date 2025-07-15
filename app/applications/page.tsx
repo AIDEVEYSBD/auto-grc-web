@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { ViewColumnsIcon, Squares2X2Icon } from "@heroicons/react/24/outline"
+import { ViewColumnsIcon, Squares2X2Icon, FunnelIcon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import DataTable from "@/components/DataTable"
 import ProgressBar from "@/components/ProgressBar"
@@ -9,11 +9,22 @@ import ApplicabilityDropdown from "@/components/ApplicabilityDropdown"
 import { CardSkeleton, TableSkeleton } from "@/components/LoadingSkeleton"
 import { useApplications, useApplicationKPIs } from "@/lib/queries/applications"
 import { useApplicabilityCategories } from "@/lib/queries/applicability"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import type { KPIData } from "@/types"
 
 export default function ApplicationsPage() {
   const [viewMode, setViewMode] = useState<"table" | "cards">("table")
-  const [selectedCriticality, setSelectedCriticality] = useState<string>("all")
+  const [filters, setFilters] = useState({
+    name: "",
+    owner: "",
+    criticality: "all",
+    cloudProvider: "all",
+    scoreRange: { min: 0, max: 100 },
+  })
+  const [showFilters, setShowFilters] = useState(false)
 
   const { data: applications, isLoading } = useApplications()
   const { data: applicabilityCategories, isLoading: categoriesLoading } = useApplicabilityCategories()
@@ -48,27 +59,78 @@ export default function ApplicationsPage() {
     return new Map(applicabilityCategories.map((cat) => [cat.id, cat]))
   }, [applicabilityCategories])
 
+  // Get unique values for filter dropdowns
+  const uniqueValues = useMemo(() => {
+    if (!applications) return { criticalities: [], cloudProviders: [], owners: [] }
+
+    const criticalities = [...new Set(applications.map((app) => app.criticality).filter(Boolean))]
+    const cloudProviders = [...new Set(applications.map((app) => app["cloud-provider"]).filter(Boolean))]
+    const owners = [...new Set(applications.map((app) => app.owner_email).filter(Boolean))]
+
+    return { criticalities, cloudProviders, owners }
+  }, [applications])
+
   // Filter applications
-  const filteredApplications =
-    applications?.filter((app) => {
-      if (selectedCriticality !== "all" && app.criticality !== selectedCriticality) {
+  const filteredApplications = useMemo(() => {
+    if (!applications) return []
+
+    return applications.filter((app) => {
+      // Name filter
+      if (filters.name && !app.name?.toLowerCase().includes(filters.name.toLowerCase())) {
         return false
       }
+
+      // Owner filter
+      if (filters.owner && !app.owner_email?.toLowerCase().includes(filters.owner.toLowerCase())) {
+        return false
+      }
+
+      // Criticality filter
+      if (filters.criticality !== "all" && app.criticality !== filters.criticality) {
+        return false
+      }
+
+      // Cloud provider filter
+      if (filters.cloudProvider !== "all" && app["cloud-provider"] !== filters.cloudProvider) {
+        return false
+      }
+
+      // Score range filter
+      const score = app.overall_score || 0
+      if (score < filters.scoreRange.min || score > filters.scoreRange.max) {
+        return false
+      }
+
       return true
-    }) || []
+    })
+  }, [applications, filters])
+
+  const handleFilterChange = (key: string, value: any) => {
+    setFilters((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const clearFilters = () => {
+    setFilters({
+      name: "",
+      owner: "",
+      criticality: "all",
+      cloudProvider: "all",
+      scoreRange: { min: 0, max: 100 },
+    })
+  }
 
   const columns = [
     {
       key: "name",
       label: "Application Name",
       sortable: true,
-      render: (value: string) => value || "-",
+      render: (value: string) => <div className="font-medium">{value || "Unnamed Application"}</div>,
     },
     {
       key: "owner_email",
       label: "Owner",
       sortable: true,
-      render: (value: string) => value || "-",
+      render: (value: string) => <div className="text-sm">{value || "-"}</div>,
     },
     {
       key: "criticality",
@@ -88,7 +150,7 @@ export default function ApplicationsPage() {
                     : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
           }`}
         >
-          {value || "-"}
+          {value || "Not Set"}
         </span>
       ),
     },
@@ -96,7 +158,7 @@ export default function ApplicationsPage() {
       key: "cloud-provider",
       label: "Cloud Provider",
       sortable: true,
-      render: (value: string) => value || "-",
+      render: (value: string) => <div className="text-sm">{value || "Not Specified"}</div>,
     },
     {
       key: "applicability",
@@ -111,12 +173,15 @@ export default function ApplicationsPage() {
       key: "overall_score",
       label: "Overall Score",
       sortable: true,
-      render: (value: number) => (
-        <div className="flex items-center gap-2">
-          <ProgressBar value={value || 0} className="w-20" />
-          <span className="text-sm font-medium">{value ? `${Math.round(value)}%` : "-"}</span>
-        </div>
-      ),
+      render: (value: number, row: any) => {
+        const score = value || 0
+        return (
+          <div className="flex items-center gap-2">
+            <ProgressBar value={score} className="w-20" />
+            <span className="text-sm font-medium min-w-[40px]">{score > 0 ? `${Math.round(score)}%` : "0%"}</span>
+          </div>
+        )
+      },
     },
   ]
 
@@ -152,19 +217,32 @@ export default function ApplicationsPage() {
 
       {/* Filters and View Toggle */}
       <div className="glass-card p-4 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-4">
-            <select
-              value={selectedCriticality}
-              onChange={(e) => setSelectedCriticality(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2"
             >
-              <option value="all">All Criticality</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
+              <FunnelIcon className="h-4 w-4" />
+              Filters
+            </Button>
+
+            {(filters.name ||
+              filters.owner ||
+              filters.criticality !== "all" ||
+              filters.cloudProvider !== "all" ||
+              filters.scoreRange.min > 0 ||
+              filters.scoreRange.max < 100) && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                Clear Filters
+              </Button>
+            )}
+
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {filteredApplications.length} of {applications?.length || 0} applications
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -190,6 +268,114 @@ export default function ApplicationsPage() {
             </button>
           </div>
         </div>
+
+        {/* Filter Controls */}
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div>
+              <Label htmlFor="name-filter" className="text-sm font-medium mb-2 block">
+                Application Name
+              </Label>
+              <Input
+                id="name-filter"
+                placeholder="Search by name..."
+                value={filters.name}
+                onChange={(e) => handleFilterChange("name", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="owner-filter" className="text-sm font-medium mb-2 block">
+                Owner
+              </Label>
+              <Input
+                id="owner-filter"
+                placeholder="Search by owner..."
+                value={filters.owner}
+                onChange={(e) => handleFilterChange("owner", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="criticality-filter" className="text-sm font-medium mb-2 block">
+                Criticality
+              </Label>
+              <Select value={filters.criticality} onValueChange={(value) => handleFilterChange("criticality", value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Criticality" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Criticality</SelectItem>
+                  {uniqueValues.criticalities.map((criticality) => (
+                    <SelectItem key={criticality} value={criticality}>
+                      {criticality}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="cloud-provider-filter" className="text-sm font-medium mb-2 block">
+                Cloud Provider
+              </Label>
+              <Select
+                value={filters.cloudProvider}
+                onValueChange={(value) => handleFilterChange("cloudProvider", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Providers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Providers</SelectItem>
+                  {uniqueValues.cloudProviders.map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {provider}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-2">
+              <Label className="text-sm font-medium mb-2 block">
+                Score Range: {filters.scoreRange.min}% - {filters.scoreRange.max}%
+              </Label>
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <Input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={filters.scoreRange.min}
+                    onChange={(e) =>
+                      handleFilterChange("scoreRange", {
+                        ...filters.scoreRange,
+                        min: Number.parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex-1">
+                  <Input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={filters.scoreRange.max}
+                    onChange={(e) =>
+                      handleFilterChange("scoreRange", {
+                        ...filters.scoreRange,
+                        max: Number.parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Applications Data */}
@@ -203,6 +389,7 @@ export default function ApplicationsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
               {filteredApplications.map((app) => {
                 const currentCategory = app.applicability ? applicabilityCategoryMap.get(app.applicability) : null
+                const score = app.overall_score || 0
                 return (
                   <div key={app.id} className="glass-card p-6">
                     <div className="flex items-start justify-between mb-4">
@@ -218,26 +405,28 @@ export default function ApplicationsPage() {
                             ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300"
                             : app.criticality === "High"
                               ? "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300"
-                              : "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300"
+                              : app.criticality === "Medium"
+                                ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
+                                : app.criticality === "Low"
+                                  ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300"
+                                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
                         }`}
                       >
-                        {app.criticality || "-"}
+                        {app.criticality || "Not Set"}
                       </span>
                     </div>
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-600 dark:text-gray-400">Overall Score</span>
-                        <span className="font-medium">
-                          {app.overall_score ? `${Math.round(app.overall_score)}%` : "-"}
-                        </span>
+                        <span className="font-medium">{score > 0 ? `${Math.round(score)}%` : "0%"}</span>
                       </div>
-                      <ProgressBar value={app.overall_score || 0} />
+                      <ProgressBar value={score} />
 
                       <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                         <div className="flex items-center justify-between text-sm mb-2">
                           <span className="text-gray-600 dark:text-gray-400">Cloud Provider</span>
-                          <span className="font-medium truncate ml-2">{app["cloud-provider"] || "-"}</span>
+                          <span className="font-medium truncate ml-2">{app["cloud-provider"] || "Not Specified"}</span>
                         </div>
 
                         <div className="flex items-center justify-between text-sm mb-1">

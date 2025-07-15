@@ -14,6 +14,7 @@ import MarketplaceModal from "@/components/MarketplaceModal"
 import RegistrationModal from "@/components/RegistrationModal"
 import DisconnectConfirmModal from "@/components/DisconnectConfirmModal"
 import ReconfigureModal from "@/components/ReconfigureModal"
+import QualysSSLResultsModal from "@/components/QualysSSLResultsModal"
 import { CardSkeleton } from "@/components/LoadingSkeleton"
 import { useIntegrations, useIntegrationKPIs } from "@/lib/queries/integrations"
 import { supabase } from "@/lib/supabase"
@@ -27,6 +28,8 @@ export default function IntegrationsPage() {
   const [isReconfigureModalOpen, setIsReconfigureModalOpen] = useState(false)
   const [selectedTool, setSelectedTool] = useState<Integration | null>(null)
   const [isProcessing, setIsProcessing] = useState<string | null>(null)
+  const [isQualysResultsOpen, setIsQualysResultsOpen] = useState(false)
+  const [qualysResults, setQualysResults] = useState<any[]>([])
 
   const { data: allIntegrations, isLoading, error, mutate } = useIntegrations()
 
@@ -77,37 +80,40 @@ export default function IntegrationsPage() {
   const handleAddTool = useCallback((tool: Integration) => {
     setSelectedTool(tool)
     setIsMarketplaceOpen(false)
-    setIsRegistrationOpen(true) // Placeholder for registration flow
-    // In a real app, you'd likely trigger a server action here to mark the tool as connected
+    setIsRegistrationOpen(true)
     console.log("Attempting to add tool:", tool.name)
   }, [])
 
   const handleCloseRegistration = useCallback(() => {
     setIsRegistrationOpen(false)
     setSelectedTool(null)
-    // Optionally re-open marketplace or refresh data
-    // setIsMarketplaceOpen(true);
   }, [])
 
   const handleRunTool = useCallback(
     async (integration: Integration) => {
-      if (!integration.endpoint) {
-        console.warn("No endpoint available for", integration.name)
-        return
-      }
-
       setIsProcessing(integration.id)
 
       try {
-        console.log(`Running tool: ${integration.name} at endpoint: ${integration.endpoint}`)
+        console.log(`Running tool: ${integration.name}`)
 
-        // Make the API call to the tool's endpoint
+        // Custom behavior for Qualys SSL Labs
+        if (integration.id === "b3f4ff74-56c1-4321-b137-690b939e454a") {
+          await handleQualysSSLLabsExecution(integration)
+          return
+        }
+
+        // Generic behavior for other integrations
+        if (!integration.endpoint) {
+          console.warn("No endpoint available for", integration.name)
+          alert(`No endpoint configured for ${integration.name}. Please configure it first.`)
+          return
+        }
+
         const response = await fetch(integration.endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          // You might want to include authentication headers or other config here
           body: JSON.stringify({
             tool_id: integration.id,
             timestamp: new Date().toISOString(),
@@ -117,14 +123,6 @@ export default function IntegrationsPage() {
         if (response.ok) {
           const result = await response.json()
           console.log(`Tool ${integration.name} executed successfully:`, result)
-
-          // Update last_sync timestamp
-          await supabase.from("integrations").update({ last_sync: new Date().toISOString() }).eq("id", integration.id)
-
-          // Refresh the data
-          mutate()
-
-          // You could show a success toast here
           alert(`Tool "${integration.name}" executed successfully!`)
         } else {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -138,6 +136,55 @@ export default function IntegrationsPage() {
     },
     [mutate],
   )
+
+  const handleQualysSSLLabsExecution = async (integration: Integration) => {
+    try {
+      console.log("Executing Qualys SSL Labs with custom endpoint...")
+
+      // Use the specific endpoint for Qualys SSL Labs
+      const endpoint = "https://integrations-y21v.onrender.com/ssl-analysis"
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tool_id: integration.id,
+          tool_name: integration.name,
+          timestamp: new Date().toISOString(),
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log("Qualys SSL Labs results:", result)
+
+        // Check if result is an array or contains an array
+        let resultsArray = result
+        if (!Array.isArray(result)) {
+          // If it's an object, try to find an array property
+          const arrayKeys = Object.keys(result).filter((key) => Array.isArray(result[key]))
+          if (arrayKeys.length > 0) {
+            resultsArray = result[arrayKeys[0]]
+          } else {
+            // If no array found, wrap the single result in an array
+            resultsArray = [result]
+          }
+        }
+
+        // Store results and open the results modal
+        setQualysResults(resultsArray)
+        setIsQualysResultsOpen(true)
+      } else {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+    } catch (error) {
+      console.error("Qualys SSL Labs execution failed:", error)
+      throw error
+    }
+  }
 
   const handleDisconnectClick = useCallback((integration: Integration) => {
     setSelectedTool(integration)
@@ -157,11 +204,7 @@ export default function IntegrationsPage() {
       }
 
       console.log(`Disconnected tool: ${selectedTool.name}`)
-
-      // Refresh the data
       mutate()
-
-      // Close modal
       setIsDisconnectModalOpen(false)
       setSelectedTool(null)
     } catch (error) {
@@ -191,11 +234,7 @@ export default function IntegrationsPage() {
         }
 
         console.log(`Updated endpoint for tool: ${selectedTool.name}`)
-
-        // Refresh the data
         mutate()
-
-        // Close modal
         setIsReconfigureModalOpen(false)
         setSelectedTool(null)
       } catch (error) {
@@ -216,6 +255,11 @@ export default function IntegrationsPage() {
   const handleCloseReconfigureModal = useCallback(() => {
     setIsReconfigureModalOpen(false)
     setSelectedTool(null)
+  }, [])
+
+  const handleCloseQualysResults = useCallback(() => {
+    setIsQualysResultsOpen(false)
+    setQualysResults([])
   }, [])
 
   if (isLoading) {
@@ -328,7 +372,7 @@ export default function IntegrationsPage() {
       <MarketplaceModal
         isOpen={isMarketplaceOpen}
         onClose={handleCloseMarketplace}
-        integrations={allIntegrations} // Pass all integrations to the marketplace modal
+        integrations={allIntegrations}
         onRefresh={mutate}
       />
 
@@ -348,6 +392,13 @@ export default function IntegrationsPage() {
         onSave={handleReconfigureSave}
         integration={selectedTool}
         isProcessing={isProcessing === selectedTool?.id}
+      />
+
+      <QualysSSLResultsModal
+        isOpen={isQualysResultsOpen}
+        onClose={handleCloseQualysResults}
+        results={qualysResults}
+        isProcessing={isProcessing === "b3f4ff74-56c1-4321-b137-690b939e454a"}
       />
     </>
   )

@@ -178,13 +178,12 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onRefr
 
       console.log("Found existing tool:", existingTool)
 
-      // Update the tool
+      // Update the tool - removed last_sync column reference
       const { data, error } = await supabase
         .from("integrations")
         .update({
           "is-connected": true,
           endpoint: endpoint,
-          last_sync: new Date().toISOString(),
         })
         .eq("id", selectedTool.id)
         .select()
