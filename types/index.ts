@@ -22,7 +22,7 @@ export interface KPIData {
       titleId?: string | undefined
     } & React.RefAttributes<SVGSVGElement>
   >
-  color?: "blue" | "green" | "yellow" | "purple"
+  color?: "blue" | "green" | "yellow" | "purple" | "red"
 }
 
 export type FilterType = "all" | "connected" | "disconnected"
@@ -46,6 +46,18 @@ export interface Control {
   description?: string
   Domain?: string
   category?: string
+}
+
+export interface ComplianceAssessment {
+  id: string
+  application_id: string
+  control_id: string
+  status: string
+  score: number
+  mapped_from: string
+  source: string
+  assessed_at: string
+  explanation?: string
 }
 
 export interface Assessment {

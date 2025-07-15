@@ -158,7 +158,28 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onRefr
     setIsProcessing(true)
 
     try {
-      const { error } = await supabase
+      console.log("Attempting to connect tool:", {
+        id: selectedTool.id,
+        name: selectedTool.name,
+        endpoint: endpoint,
+      })
+
+      // Check if the tool exists in the database first
+      const { data: existingTool, error: fetchError } = await supabase
+        .from("integrations")
+        .select("*")
+        .eq("id", selectedTool.id)
+        .single()
+
+      if (fetchError) {
+        console.error("Error fetching tool:", fetchError)
+        throw new Error(`Tool not found in database: ${fetchError.message}`)
+      }
+
+      console.log("Found existing tool:", existingTool)
+
+      // Update the tool
+      const { data, error } = await supabase
         .from("integrations")
         .update({
           "is-connected": true,
@@ -166,23 +187,32 @@ export default function MarketplaceModal({ isOpen, onClose, integrations, onRefr
           last_sync: new Date().toISOString(),
         })
         .eq("id", selectedTool.id)
+        .select()
 
       if (error) {
-        throw error
+        console.error("Supabase update error:", error)
+        throw new Error(`Database update failed: ${error.message}`)
       }
 
-      console.log(`Connected tool: ${selectedTool.name} with endpoint: ${endpoint}`)
+      console.log("Successfully updated tool:", data)
 
       // Close modals and refresh data
       setIsEndpointModalOpen(false)
       setSelectedTool(null)
-      onRefresh?.()
+
+      if (onRefresh) {
+        console.log("Refreshing data...")
+        onRefresh()
+      }
 
       // Show success feedback
       alert(`Successfully connected ${selectedTool.name}!`)
     } catch (error) {
       console.error(`Failed to connect tool ${selectedTool.name}:`, error)
-      alert(`Failed to connect tool "${selectedTool.name}". Please try again.`)
+
+      // More detailed error message
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+      alert(`Failed to connect tool "${selectedTool.name}": ${errorMessage}`)
     } finally {
       setIsProcessing(false)
     }

@@ -26,28 +26,42 @@ export default function ApplicationsFrameworkTable() {
         // Get controls for this framework
         const frameworkControls = allControls.filter((control) => control.framework_id === framework.id)
 
-        // Get assessments for this app and framework
+        // Get assessments for this app and framework (using mapped_from to identify framework)
         const appFrameworkAssessments = assessments.filter(
-          (assessment) =>
-            assessment.application_id === app.id &&
-            frameworkControls.some((control) => control.id === assessment.control_id),
+          (assessment) => assessment.application_id === app.id && assessment.mapped_from === framework.id,
         )
 
         const totalControls = frameworkControls.length
-        const passedControls = appFrameworkAssessments.filter((a) => a.status === "pass").length
-        const score = totalControls > 0 ? Math.round((passedControls / totalControls) * 100) : 0
+
+        // Count controls based on score thresholds
+        const passingControls = appFrameworkAssessments.filter((a) => a.score >= 0.8).length
+        const partialControls = appFrameworkAssessments.filter((a) => a.score >= 0.4 && a.score < 0.8).length
+        const totalPassedControls = passingControls + partialControls
+
+        const score = totalControls > 0 ? Math.round((totalPassedControls / totalControls) * 100) : 0
 
         return {
           frameworkId: framework.id,
           frameworkName: framework.name,
           score,
+          passedControls: totalPassedControls,
+          totalControls,
+          passingControls,
+          partialControls,
           status: score >= 80 ? "compliant" : score >= 40 ? "warning" : "critical",
         }
       })
 
+      // Calculate overall score as average of all framework scores
+      const overallScore =
+        frameworkScores.length > 0
+          ? Math.round(frameworkScores.reduce((sum, fw) => sum + fw.score, 0) / frameworkScores.length)
+          : 0
+
       return {
         ...app,
         frameworkScores,
+        overall_score: overallScore,
       }
     })
   }, [applications, frameworks, assessments, allControls])
@@ -78,7 +92,7 @@ export default function ApplicationsFrameworkTable() {
       <div className="p-8 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Applications Framework Compliance</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Compliance status of each application across all frameworks
+          Compliance status of each application across all frameworks (based on assessment scores)
         </p>
       </div>
 
@@ -120,9 +134,19 @@ export default function ApplicationsFrameworkTable() {
                 </td>
                 {app.frameworkScores.map((framework) => (
                   <td key={framework.frameworkId} className="px-6 py-6 whitespace-nowrap text-center">
-                    <div className="flex items-center justify-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${getStatusColor(framework.status)}`} />
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{framework.score}%</span>
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${getStatusColor(framework.status)}`} />
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{framework.score}%</span>
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {framework.passedControls}/{framework.totalControls} controls
+                      </div>
+                      {framework.partialControls > 0 && (
+                        <div className="text-xs text-amber-600 dark:text-amber-400">
+                          ({framework.partialControls} partial)
+                        </div>
+                      )}
                     </div>
                   </td>
                 ))}
@@ -133,9 +157,7 @@ export default function ApplicationsFrameworkTable() {
                         app.overall_score >= 80 ? "compliant" : app.overall_score >= 40 ? "warning" : "critical",
                       )}`}
                     />
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {Math.round(app.overall_score)}%
-                    </span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{app.overall_score}%</span>
                   </div>
                 </td>
               </tr>
