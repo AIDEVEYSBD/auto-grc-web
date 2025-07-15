@@ -4,12 +4,15 @@ import { useMemo, useState, useEffect } from "react"
 import { PencilSquareIcon, XMarkIcon, PlusIcon } from "@heroicons/react/24/outline"
 import { ArrowUpIcon, ArrowDownIcon } from "@heroicons/react/24/solid"
 import type { Framework, Control, FrameworkMapping } from "@/types"
+import { saveFrameworkMappings } from "@/lib/queries/mapping"
+
 
 interface FrameworkComparisonTableProps {
   masterFramework: Framework
   otherFrameworks: Framework[]
   allControls: Control[]
   allMappings: FrameworkMapping[]
+  mutateMappings: () => Promise<any> 
 }
 
 const frameworkColors = [
@@ -30,6 +33,8 @@ export default function FrameworkComparisonTable({
   const [editMode, setEditMode] = useState(false)
   const [editingCell, setEditingCell] = useState<{ controlId: string; frameworkId: string } | null>(null)
   const [editedMappings, setEditedMappings] = useState<FrameworkMapping[]>(allMappings)
+  const [originalMappings, setOriginalMappings] = useState<FrameworkMapping[]>(allMappings)
+  const [saving, setSaving] = useState(false)
   const [addMappingDropdown, setAddMappingDropdown] = useState<{ controlId: string; frameworkId: string } | null>(null)
   const [selectedAddControlIds, setSelectedAddControlIds] = useState<string[]>([])
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null)
@@ -86,6 +91,14 @@ export default function FrameworkComparisonTable({
     }
   }, [domains, selectedDomain])
 
+  // Keep originalMappings in sync with allMappings when not editing
+  useEffect(() => {
+    if (!editMode) {
+      setEditedMappings(allMappings)
+      setOriginalMappings(allMappings)
+    }
+  }, [allMappings, editMode])
+
   const handleSort = () => {
     setSortConfig((prev) => ({
       ...prev,
@@ -104,16 +117,52 @@ export default function FrameworkComparisonTable({
             Comparing <span className="font-bold">{masterFramework.name}</span> (Master) against other frameworks.
           </p>
         </div>
-        <button
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${editMode ? "bg-blue-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"}`}
-          onClick={() => {
-            setEditMode((prev) => !prev)
-            setEditingCell(null)
-          }}
-        >
-          <PencilSquareIcon className="h-5 w-5" />
-          {editMode ? "Editing Enabled" : "Edit Mappings"}
-        </button>
+        {!editMode ? (
+          <button
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+            onClick={() => {
+              setEditMode(true)
+              setEditingCell(null)
+              setOriginalMappings(editedMappings)
+            }}
+          >
+            <PencilSquareIcon className="h-5 w-5" />
+            Edit Mappings
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors bg-blue-600 text-white disabled:opacity-60"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true)
+                try {
+                  await saveFrameworkMappings(editedMappings, originalMappings)
+                  await mutateMappings()
+                } catch (err) {
+                  // Optionally show error
+                } finally {
+                  setSaving(false)
+                  setEditMode(false)
+                  setEditingCell(null)
+                }
+              }}
+            >
+              {saving && <span className="animate-spin mr-2"><svg width="16" height="16" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" opacity="0.25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg></span>}Save
+            </button>
+            <button
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+              disabled={saving}
+              onClick={() => {
+                setEditMode(false)
+                setEditingCell(null)
+                setEditedMappings(originalMappings)
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-grow flex overflow-hidden">
@@ -127,11 +176,10 @@ export default function FrameworkComparisonTable({
               <button
                 key={domain}
                 onClick={() => setSelectedDomain(domain)}
-                className={`w-full text-left p-3 rounded-lg transition-colors text-sm ${
-                  selectedDomain === domain
+                className={`w-full text-left p-3 rounded-lg transition-colors text-sm ${selectedDomain === domain
                     ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold"
                     : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/50"
-                }`}
+                  }`}
               >
                 {domain}
               </button>
@@ -157,9 +205,8 @@ export default function FrameworkComparisonTable({
                 {otherFrameworks.map((fw, index) => (
                   <th
                     key={fw.id}
-                    className={`w-80 p-4 text-left text-sm font-semibold ${
-                      frameworkColors[index % frameworkColors.length]
-                    } border-b border-gray-200 dark:border-gray-700`}
+                    className={`w-80 p-4 text-left text-sm font-semibold ${frameworkColors[index % frameworkColors.length]
+                      } border-b border-gray-200 dark:border-gray-700`}
                   >
                     {fw.name}
                   </th>
@@ -199,11 +246,11 @@ export default function FrameworkComparisonTable({
                                         setEditedMappings((prev) =>
                                           prev.map((m) =>
                                             (m.source_control_id === row.masterControl.id && m.target_control_id === control.id) ||
-                                            (m.target_control_id === row.masterControl.id && m.source_control_id === control.id)
+                                              (m.target_control_id === row.masterControl.id && m.source_control_id === control.id)
                                               ? {
-                                                  ...m,
-                                                  Controls: e.target.value,
-                                                }
+                                                ...m,
+                                                Controls: e.target.value,
+                                              }
                                               : m
                                           )
                                         )
