@@ -253,24 +253,58 @@ export default function DataTable({ data, columns, loading = false, onFilteredDa
                               </button>
                             )}
                           </div>
-                          <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {getUniqueValues(column.key).map((value) => (
-                              <label
-                                key={value}
-                                className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 rounded px-2 py-1"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={filters[column.key]?.includes(value) || false}
-                                  onChange={(e) => handleFilterChange(column.key, value, e.target.checked)}
-                                  className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">
-                                  {value}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
+                          <div className="space-y-2 max-h-56 overflow-y-auto">
+
+  {/* Sorting Controls */}
+  {column.sortable && (
+    <div className="border-b border-gray-300 dark:border-gray-600 pb-2 mb-2">
+      <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 block mb-1">Sort</span>
+      <div className="flex flex-col space-y-1">
+        <button
+          onClick={() => setSortConfig({ key: column.key, direction: "asc" })}
+          className={`text-left text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
+            sortConfig?.key === column.key && sortConfig.direction === "asc" ? "bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"
+          }`}
+        >
+          ↑ Ascending
+        </button>
+        <button
+          onClick={() => setSortConfig({ key: column.key, direction: "desc" })}
+          className={`text-left text-sm px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
+            sortConfig?.key === column.key && sortConfig.direction === "desc" ? "bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"
+          }`}
+        >
+          ↓ Descending
+        </button>
+        <button
+          onClick={() => setSortConfig(null)}
+          className="text-left text-xs px-2 py-1 rounded text-gray-500 dark:text-gray-400 hover:underline"
+        >
+          Clear Sort
+        </button>
+      </div>
+    </div>
+  )}
+
+  {/* Existing Filter Checkboxes */}
+  {getUniqueValues(column.key).map((value) => (
+    <label
+      key={value}
+      className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 rounded px-2 py-1"
+    >
+      <input
+        type="checkbox"
+        checked={filters[column.key]?.includes(value) || false}
+        onChange={(e) => handleFilterChange(column.key, value, e.target.checked)}
+        className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+      />
+      <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">
+        {value}
+      </span>
+    </label>
+  ))}
+</div>
+
                         </div>
                       </div>
                     )}
