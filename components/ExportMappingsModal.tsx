@@ -42,23 +42,47 @@ export default function ExportMappingsModal({ isOpen, onClose, frameworks }: Exp
     setIsLoading(true)
 
     try {
+      console.log("Sending export request with frameworks:", selectedFrameworks)
+
       const response = await fetch("https://export-lyrk.onrender.com/api/framework-mappings/report", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         },
         body: JSON.stringify({
           frameworks: selectedFrameworks,
         }),
       })
 
+      console.log("Response status:", response.status)
+      console.log("Response headers:", response.headers)
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to export mappings")
+        let errorMessage = "Failed to export mappings"
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        }
+        throw new Error(errorMessage)
+      }
+
+      // Check if response is actually a file
+      const contentType = response.headers.get("content-type")
+      if (!contentType || !contentType.includes("spreadsheet")) {
+        console.warn("Unexpected content type:", contentType)
       }
 
       // Handle file download
       const blob = await response.blob()
+      console.log("Blob size:", blob.size)
+
+      if (blob.size === 0) {
+        throw new Error("Received empty file from server")
+      }
+
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.style.display = "none"
@@ -69,9 +93,9 @@ export default function ExportMappingsModal({ isOpen, onClose, frameworks }: Exp
       let filename = `Framework_Mapping_Report_${selectedFrameworks.join("_vs_")}_${new Date().toISOString().split("T")[0]}.xlsx`
 
       if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/)
-        if (filenameMatch) {
-          filename = filenameMatch[1]
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, "")
         }
       }
 
@@ -86,6 +110,7 @@ export default function ExportMappingsModal({ isOpen, onClose, frameworks }: Exp
         handleClose()
       }, 2000)
     } catch (err: any) {
+      console.error("Export error:", err)
       setError(err.message || "An unexpected error occurred during export.")
     } finally {
       setIsLoading(false)
