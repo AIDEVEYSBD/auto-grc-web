@@ -1,9 +1,10 @@
 "use client"
 
 import React from "react"
+import { supabase } from "@/lib/supabase"
 
 import { useState, useMemo } from "react"
-import { ViewColumnsIcon, Squares2X2Icon, FunnelIcon } from "@heroicons/react/24/outline"
+import { ViewColumnsIcon, Squares2X2Icon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import DataTable from "@/components/DataTable"
 import ProgressBar from "@/components/ProgressBar"
@@ -11,23 +12,10 @@ import ApplicabilityDropdown from "@/components/ApplicabilityDropdown"
 import { CardSkeleton, TableSkeleton } from "@/components/LoadingSkeleton"
 import { useApplications } from "@/lib/queries/applications"
 import { useApplicabilityCategories } from "@/lib/queries/applicability"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
-import { supabase } from "@/lib/supabase"
 import type { KPIData } from "@/types"
 
 export default function ApplicationsPage() {
   const [viewMode, setViewMode] = useState<"table" | "cards">("table")
-  const [filters, setFilters] = useState({
-    name: "",
-    owner: "",
-    criticality: "all",
-    cloudProvider: "all",
-    scoreRange: { min: 0, max: 100 },
-  })
-  const [showFilters, setShowFilters] = useState(false)
   const [applicationsWithScores, setApplicationsWithScores] = useState<any[]>([])
   const [isLoadingScores, setIsLoadingScores] = useState(false)
 
@@ -129,65 +117,9 @@ export default function ApplicationsPage() {
     return new Map(applicabilityCategories.map((cat) => [cat.id, cat]))
   }, [applicabilityCategories])
 
-  // Get unique values for filter dropdowns
-  const uniqueValues = useMemo(() => {
-    if (!applicationsWithScores) return { criticalities: [], cloudProviders: [], owners: [] }
-
-    const criticalities = [...new Set(applicationsWithScores.map((app) => app.criticality).filter(Boolean))]
-    const cloudProviders = [...new Set(applicationsWithScores.map((app) => app["cloud-provider"]).filter(Boolean))]
-    const owners = [...new Set(applicationsWithScores.map((app) => app.owner_email).filter(Boolean))]
-
-    return { criticalities, cloudProviders, owners }
-  }, [applicationsWithScores])
-
-  // Filter applications
   const filteredApplications = useMemo(() => {
-    if (!applicationsWithScores) return []
-
-    return applicationsWithScores.filter((app) => {
-      // Name filter
-      if (filters.name && !app.name?.toLowerCase().includes(filters.name.toLowerCase())) {
-        return false
-      }
-
-      // Owner filter
-      if (filters.owner && !app.owner_email?.toLowerCase().includes(filters.owner.toLowerCase())) {
-        return false
-      }
-
-      // Criticality filter
-      if (filters.criticality !== "all" && app.criticality !== filters.criticality) {
-        return false
-      }
-
-      // Cloud provider filter
-      if (filters.cloudProvider !== "all" && app["cloud-provider"] !== filters.cloudProvider) {
-        return false
-      }
-
-      // Score range filter
-      const score = app.overall_score || 0
-      if (score < filters.scoreRange.min || score > filters.scoreRange.max) {
-        return false
-      }
-
-      return true
-    })
-  }, [applicationsWithScores, filters])
-
-  const handleFilterChange = (key: string, value: any) => {
-    setFilters((prev) => ({ ...prev, [key]: value }))
-  }
-
-  const clearFilters = () => {
-    setFilters({
-      name: "",
-      owner: "",
-      criticality: "all",
-      cloudProvider: "all",
-      scoreRange: { min: 0, max: 100 },
-    })
-  }
+    return applicationsWithScores || []
+  }, [applicationsWithScores])
 
   const columns = [
     {
@@ -286,34 +218,12 @@ export default function ApplicationsPage() {
       </div>
 
       {/* Filters and View Toggle */}
+      {/* View Toggle Only */}
       <div className="glass-card p-4 flex-shrink-0 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2"
-            >
-              <FunnelIcon className="h-4 w-4" />
-              Filters
-            </Button>
-
-            {(filters.name ||
-              filters.owner ||
-              filters.criticality !== "all" ||
-              filters.cloudProvider !== "all" ||
-              filters.scoreRange.min > 0 ||
-              filters.scoreRange.max < 100) && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Clear Filters
-              </Button>
-            )}
-
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {filteredApplications.length} of {applicationsWithScores?.length || 0} applications
-            </span>
-          </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            {applicationsWithScores?.length || 0} applications
+          </span>
 
           <div className="flex items-center gap-2">
             <button
@@ -338,114 +248,6 @@ export default function ApplicationsPage() {
             </button>
           </div>
         </div>
-
-        {/* Filter Controls */}
-        {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div>
-              <Label htmlFor="name-filter" className="text-sm font-medium mb-2 block">
-                Application Name
-              </Label>
-              <Input
-                id="name-filter"
-                placeholder="Search by name..."
-                value={filters.name}
-                onChange={(e) => handleFilterChange("name", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="owner-filter" className="text-sm font-medium mb-2 block">
-                Owner
-              </Label>
-              <Input
-                id="owner-filter"
-                placeholder="Search by owner..."
-                value={filters.owner}
-                onChange={(e) => handleFilterChange("owner", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="criticality-filter" className="text-sm font-medium mb-2 block">
-                Criticality
-              </Label>
-              <Select value={filters.criticality} onValueChange={(value) => handleFilterChange("criticality", value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Criticality" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Criticality</SelectItem>
-                  {uniqueValues.criticalities.map((criticality) => (
-                    <SelectItem key={criticality} value={criticality}>
-                      {criticality}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="cloud-provider-filter" className="text-sm font-medium mb-2 block">
-                Cloud Provider
-              </Label>
-              <Select
-                value={filters.cloudProvider}
-                onValueChange={(value) => handleFilterChange("cloudProvider", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Providers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Providers</SelectItem>
-                  {uniqueValues.cloudProviders.map((provider) => (
-                    <SelectItem key={provider} value={provider}>
-                      {provider}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="md:col-span-2">
-              <Label className="text-sm font-medium mb-2 block">
-                Score Range: {filters.scoreRange.min}% - {filters.scoreRange.max}%
-              </Label>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <Input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={filters.scoreRange.min}
-                    onChange={(e) =>
-                      handleFilterChange("scoreRange", {
-                        ...filters.scoreRange,
-                        min: Number.parseInt(e.target.value),
-                      })
-                    }
-                    className="w-full"
-                  />
-                </div>
-                <div className="flex-1">
-                  <Input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={filters.scoreRange.max}
-                    onChange={(e) =>
-                      handleFilterChange("scoreRange", {
-                        ...filters.scoreRange,
-                        max: Number.parseInt(e.target.value),
-                      })
-                    }
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Applications Data - Scrollable Container */}

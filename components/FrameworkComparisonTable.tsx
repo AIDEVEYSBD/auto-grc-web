@@ -139,14 +139,12 @@ export default function FrameworkComparisonTable({
                 try {
                   await saveFrameworkMappings(editedMappings, originalMappings)
                   await mutateMappings()
-                  
                 } catch (err) {
                   // Optionally show error
                 } finally {
                   setSaving(false)
                   setEditMode(false)
                   setEditingCell(null)
-                  window.location.reload()
                 }
               }}
             >
