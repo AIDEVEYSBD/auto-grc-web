@@ -173,7 +173,7 @@ export default function DataTable({ data, columns, loading = false, onFilteredDa
 
   return (
     <div className="w-full">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto min-h-[24rem]">
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">
