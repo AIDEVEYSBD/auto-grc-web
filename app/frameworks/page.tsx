@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from "react"
 import { mutate } from "swr"
-import { DocumentTextIcon, ShieldCheckIcon, StarIcon, ArrowUpTrayIcon } from "@heroicons/react/24/outline"
+import {
+  DocumentTextIcon,
+  ShieldCheckIcon,
+  StarIcon,
+  ArrowUpTrayIcon,
+  ArrowDownTrayIcon,
+} from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import FrameworkCard from "@/components/FrameworkCard"
 import FrameworkComparisonTable from "@/components/FrameworkComparisonTable"
@@ -14,18 +20,19 @@ import { useFrameworkMappings } from "@/lib/queries/mappings"
 import type { KPIData } from "@/types"
 import FrameworkControlsModal from "@/components/FrameworkControlsModal"
 import type { Framework } from "@/types"
-import useSWR from "swr"
+import ExportMappingsModal from "@/components/ExportMappingsModal"
 
 export default function FrameworksPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const { data: frameworks, isLoading: frameworksLoading } = useFrameworks()
-  const { data: mappings, isLoading: mappingsLoading , mutate: mutateMappings } = useFrameworkMappings()
+  const { data: mappings, isLoading: mappingsLoading, mutate: mutateMappings } = useFrameworkMappings()
   const { totalControls, controls: allControls } = useFrameworkKPIs()
 
   const isLoading = frameworksLoading || mappingsLoading
 
   const [selectedFramework, setSelectedFramework] = useState<Framework | null>(null)
   const [isControlsModalOpen, setIsControlsModalOpen] = useState(false)
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
 
   const frameworkData = useMemo(() => {
     if (!frameworks || !mappings || !allControls) return []
@@ -149,6 +156,11 @@ export default function FrameworksPage() {
   return (
     <>
       <UploadFrameworkModal isOpen={isUploadModalOpen} onClose={handleModalClose} onUpload={handleUpload} />
+      <ExportMappingsModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        frameworks={frameworks || []}
+      />
       <FrameworkControlsModal
         isOpen={isControlsModalOpen}
         onClose={handleControlsModalClose}
@@ -161,13 +173,23 @@ export default function FrameworksPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Compliance Frameworks</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">Manage and monitor your compliance frameworks</p>
           </div>
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <ArrowUpTrayIcon className="h-4 w-4" />
-            Upload Framework
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsExportModalOpen(true)}
+              disabled={!frameworks || frameworks.length < 2}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              Export Mappings
+            </button>
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <ArrowUpTrayIcon className="h-4 w-4" />
+              Upload Framework
+            </button>
+          </div>
         </div>
 
         {/* KPI Tiles */}
@@ -196,7 +218,7 @@ export default function FrameworksPage() {
             otherFrameworks={otherFrameworks}
             allControls={allControls}
             allMappings={mappings}
-            mutateMappings={mutateMappings} 
+            mutateMappings={mutateMappings}
           />
         )}
 
