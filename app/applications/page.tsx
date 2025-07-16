@@ -3,7 +3,7 @@
 import React from "react"
 import { supabase } from "@/lib/supabase"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { ViewColumnsIcon, Squares2X2Icon } from "@heroicons/react/24/outline"
 import KpiTile from "@/components/KpiTile"
 import DataTable from "@/components/DataTable"
@@ -17,6 +17,7 @@ import type { KPIData } from "@/types"
 export default function ApplicationsPage() {
   const [viewMode, setViewMode] = useState<"table" | "cards">("table")
   const [applicationsWithScores, setApplicationsWithScores] = useState<any[]>([])
+  const [filteredApplications, setFilteredApplications] = useState<any[]>([])
   const [isLoadingScores, setIsLoadingScores] = useState(false)
 
   const { data: applications, isLoading } = useApplications()
@@ -55,13 +56,21 @@ export default function ApplicationsPage() {
       )
 
       setApplicationsWithScores(appsWithScores)
+      setFilteredApplications(appsWithScores) // Initialize filtered data
     } catch (error) {
       console.error("Error fetching CIS scores:", error)
-      setApplicationsWithScores(applications.map((app) => ({ ...app, overall_score: 0 })))
+      const fallbackData = applications.map((app) => ({ ...app, overall_score: 0 }))
+      setApplicationsWithScores(fallbackData)
+      setFilteredApplications(fallbackData)
     } finally {
       setIsLoadingScores(false)
     }
   }
+
+  // Handle filtered data changes from DataTable
+  const handleFilteredDataChange = useCallback((filtered: any[]) => {
+    setFilteredApplications(filtered)
+  }, [])
 
   // Fetch scores when applications data is available
   React.useEffect(() => {
@@ -70,14 +79,13 @@ export default function ApplicationsPage() {
     }
   }, [applications])
 
-  // Calculate KPIs based on applications with CIS scores
+  // Calculate KPIs based on filtered applications (not all applications)
   const kpis = useMemo(() => {
-    const total = applicationsWithScores?.length || 0
-    const compliant = applicationsWithScores?.filter((app) => app.overall_score >= 80).length || 0
-    const warning =
-      applicationsWithScores?.filter((app) => app.overall_score >= 50 && app.overall_score < 80).length || 0
-    const critical = applicationsWithScores?.filter((app) => app.overall_score < 50).length || 0
-    const avgScore = total > 0 ? applicationsWithScores?.reduce((sum, app) => sum + app.overall_score, 0) / total : 0
+    const total = filteredApplications?.length || 0
+    const compliant = filteredApplications?.filter((app) => app.overall_score >= 80).length || 0
+    const warning = filteredApplications?.filter((app) => app.overall_score >= 50 && app.overall_score < 80).length || 0
+    const critical = filteredApplications?.filter((app) => app.overall_score < 50).length || 0
+    const avgScore = total > 0 ? filteredApplications?.reduce((sum, app) => sum + app.overall_score, 0) / total : 0
 
     return {
       total,
@@ -86,7 +94,7 @@ export default function ApplicationsPage() {
       critical,
       avgScore: Math.round(avgScore || 0),
     }
-  }, [applicationsWithScores])
+  }, [filteredApplications])
 
   const kpiData: KPIData[] = [
     {
@@ -116,10 +124,6 @@ export default function ApplicationsPage() {
     if (!applicabilityCategories) return new Map()
     return new Map(applicabilityCategories.map((cat) => [cat.id, cat]))
   }, [applicabilityCategories])
-
-  const filteredApplications = useMemo(() => {
-    return applicationsWithScores || []
-  }, [applicationsWithScores])
 
   const columns = [
     {
@@ -216,7 +220,7 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* KPI Tiles */}
+      {/* KPI Tiles - Now updates based on filtered data */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 flex-shrink-0 mb-6">
         {kpiData.map((kpi, index) => (
           <KpiTile key={index} data={kpi} />
@@ -227,7 +231,12 @@ export default function ApplicationsPage() {
       <div className="glass-card p-4 flex-shrink-0 mb-6">
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600 dark:text-gray-400">
-            {applicationsWithScores?.length || 0} applications
+            {filteredApplications?.length || 0} applications
+            {filteredApplications?.length !== applicationsWithScores?.length && (
+              <span className="text-blue-600 dark:text-blue-400 ml-1">
+                (filtered from {applicationsWithScores?.length || 0})
+              </span>
+            )}
           </span>
 
           <div className="flex items-center gap-2">
@@ -260,7 +269,12 @@ export default function ApplicationsPage() {
         {viewMode === "table" ? (
           <div className="h-full overflow-auto">
             <div className="glass-card">
-              <DataTable data={filteredApplications} columns={columns} loading={isLoading || isLoadingScores} />
+              <DataTable
+                data={applicationsWithScores}
+                columns={columns}
+                loading={isLoading || isLoadingScores}
+                onFilteredDataChange={handleFilteredDataChange}
+              />
             </div>
           </div>
         ) : (

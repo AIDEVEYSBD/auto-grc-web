@@ -1,12 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState, useMemo } from "react"
-import { MagnifyingGlassIcon, AdjustmentsHorizontalIcon } from "@heroicons/react/24/outline"
-import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Checkbox } from "@/components/ui/checkbox"
-import LoadingSkeleton from "./LoadingSkeleton"
+import { useState, useMemo, useRef, useEffect } from "react"
+import { ChevronUpIcon, ChevronDownIcon } from "@heroicons/react/24/outline"
 
 interface Column {
   key: string
@@ -20,33 +16,39 @@ interface DataTableProps {
   data: any[]
   columns: Column[]
   loading?: boolean
-  searchable?: boolean
-  className?: string
+  onFilteredDataChange?: (filteredData: any[]) => void
 }
 
-export default function DataTable({
-  data,
-  columns,
-  loading = false,
-  searchable = true,
-  className = "",
-}: DataTableProps) {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [sortColumn, setSortColumn] = useState<string | null>(null)
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
-  const [visibleColumns, setVisibleColumns] = useState<string[]>(columns.map((col) => col.key))
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({})
+export default function DataTable({ data, columns, loading = false, onFilteredDataChange }: DataTableProps) {
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" } | null>(null)
+  const [filters, setFilters] = useState<Record<string, string[]>>({})
+  const [openFilter, setOpenFilter] = useState<string | null>(null)
+  const dropdownRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  // Get unique values for each filterable column
-  const getUniqueValues = (columnKey: string) => {
-    if (columnKey === "overall_score") {
-      // For CIS Score, create meaningful ranges
-      const ranges = ["0-49% (Critical)", "50-79% (Warning)", "80-100% (Compliant)", "Not Scored"]
-      return ranges
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openFilter && dropdownRefs.current[openFilter]) {
+        const dropdown = dropdownRefs.current[openFilter]
+        if (dropdown && !dropdown.contains(event.target as Node)) {
+          setOpenFilter(null)
+        }
+      }
     }
 
-    const values = data.map((row) => {
-      const value = row[columnKey]
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [openFilter])
+
+  // Get unique values for a column
+  const getUniqueValues = (key: string) => {
+    if (key === "overall_score") {
+      // Special handling for score ranges
+      return ["0-49% (Critical)", "50-79% (Warning)", "80-100% (Compliant)", "Not Scored"]
+    }
+
+    const values = data.map((item) => {
+      const value = item[key]
       if (value === null || value === undefined || value === "") {
         return "Not Set"
       }
@@ -55,264 +57,267 @@ export default function DataTable({
     return [...new Set(values)].sort()
   }
 
-  // Apply filters to data
+  // Filter data based on active filters
   const filteredData = useMemo(() => {
-    let filtered = data.filter((row) =>
-      Object.values(row).some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase())),
-    )
+    let filtered = [...data]
 
-    // Apply column filters
-    Object.entries(columnFilters).forEach(([columnKey, selectedValues]) => {
+    Object.entries(filters).forEach(([key, selectedValues]) => {
       if (selectedValues.length > 0) {
-        filtered = filtered.filter((row) => {
-          const value = row[columnKey]
-
-          if (columnKey === "overall_score") {
-            // Handle CIS Score range filtering
-            const score = value || 0
+        filtered = filtered.filter((item) => {
+          if (key === "overall_score") {
+            const score = item[key] || 0
             return selectedValues.some((range) => {
-              if (range === "0-49% (Critical)") return score >= 0 && score < 50
-              if (range === "50-79% (Warning)") return score >= 50 && score < 80
-              if (range === "80-100% (Compliant)") return score >= 80 && score <= 100
-              if (range === "Not Scored") return score === 0
-              return false
+              switch (range) {
+                case "0-49% (Critical)":
+                  return score >= 0 && score < 50
+                case "50-79% (Warning)":
+                  return score >= 50 && score < 80
+                case "80-100% (Compliant)":
+                  return score >= 80
+                case "Not Scored":
+                  return score === 0
+                default:
+                  return false
+              }
             })
           }
 
-          const stringValue = value === null || value === undefined || value === "" ? "Not Set" : String(value)
-          return selectedValues.includes(stringValue)
+          const value = item[key]
+          const displayValue = value === null || value === undefined || value === "" ? "Not Set" : String(value)
+          return selectedValues.includes(displayValue)
         })
       }
     })
 
     return filtered
-  }, [data, searchTerm, columnFilters])
+  }, [data, filters])
 
-  const sortedData = sortColumn
-    ? [...filteredData].sort((a, b) => {
-        const aVal = a[sortColumn]
-        const bVal = b[sortColumn]
-        const modifier = sortDirection === "asc" ? 1 : -1
-
-        if (typeof aVal === "number" && typeof bVal === "number") {
-          return (aVal - bVal) * modifier
-        }
-
-        return String(aVal).localeCompare(String(bVal)) * modifier
-      })
-    : filteredData
-
-  const handleSort = (columnKey: string) => {
-    if (sortColumn === columnKey) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-    } else {
-      setSortColumn(columnKey)
-      setSortDirection("asc")
+  // Notify parent component of filtered data changes
+  useEffect(() => {
+    if (onFilteredDataChange) {
+      onFilteredDataChange(filteredData)
     }
+  }, [filteredData, onFilteredDataChange])
+
+  // Sort filtered data
+  const sortedData = useMemo(() => {
+    if (!sortConfig) return filteredData
+
+    return [...filteredData].sort((a, b) => {
+      const aValue = a[sortConfig.key]
+      const bValue = b[sortConfig.key]
+
+      if (aValue === null || aValue === undefined) return 1
+      if (bValue === null || bValue === undefined) return -1
+
+      if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1
+      if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1
+      return 0
+    })
+  }, [filteredData, sortConfig])
+
+  const handleSort = (key: string) => {
+    const column = columns.find((col) => col.key === key)
+    if (!column?.sortable) return
+
+    setSortConfig((current) => {
+      if (current?.key === key) {
+        return current.direction === "asc" ? { key, direction: "desc" } : null
+      }
+      return { key, direction: "asc" }
+    })
   }
 
-  const handleFilterChange = (columnKey: string, value: string, checked: boolean) => {
-    setColumnFilters((prev) => {
-      const currentFilters = prev[columnKey] || []
+  const handleFilterToggle = (key: string) => {
+    const column = columns.find((col) => col.key === key)
+    if (!column?.filterable) return
+
+    setOpenFilter(openFilter === key ? null : key)
+  }
+
+  const handleFilterChange = (key: string, value: string, checked: boolean) => {
+    setFilters((prev) => {
+      const current = prev[key] || []
       if (checked) {
-        return {
-          ...prev,
-          [columnKey]: [...currentFilters, value],
-        }
+        return { ...prev, [key]: [...current, value] }
       } else {
-        return {
-          ...prev,
-          [columnKey]: currentFilters.filter((v) => v !== value),
-        }
+        return { ...prev, [key]: current.filter((v) => v !== value) }
       }
     })
   }
 
-  const clearAllFilters = () => {
-    setColumnFilters({})
-    setSearchTerm("")
+  const clearFilter = (key: string) => {
+    setFilters((prev) => {
+      const newFilters = { ...prev }
+      delete newFilters[key]
+      return newFilters
+    })
   }
 
-  const hasActiveFilters = Object.values(columnFilters).some((filters) => filters.length > 0) || searchTerm.length > 0
+  const clearAllFilters = () => {
+    setFilters({})
+  }
+
+  const activeFilterCount = Object.values(filters).reduce((count, values) => count + values.length, 0)
 
   if (loading) {
     return (
-      <div className={`glass-card p-6 ${className}`}>
-        <div className="space-y-4">
-          {[...Array(5)].map((_, i) => (
-            <LoadingSkeleton key={i} className="h-12" />
-          ))}
-        </div>
+      <div className="animate-pulse">
+        <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="h-16 bg-gray-100 dark:bg-gray-800 rounded mb-2"></div>
+        ))}
       </div>
     )
   }
 
   return (
-    <div className={`glass-card ${className}`}>
-      {searchable && (
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex gap-4 items-center">
-            <div className="relative flex-1">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            {hasActiveFilters && (
-              <Button variant="outline" size="sm" onClick={clearAllFilters}>
-                Clear Filters
-              </Button>
-            )}
-            <button className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-              <AdjustmentsHorizontalIcon className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
+    <div className="w-full">
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-800/50">
-            <tr>
-              {columns
-                .filter((col) => visibleColumns.includes(col.key))
-                .map((column) => {
-                  const hasFilter = column.filterable !== false
-                  const activeFilters = columnFilters[column.key] || []
-                  const uniqueValues = hasFilter ? getUniqueValues(column.key) : []
+          <thead>
+            <tr className="border-b border-gray-200 dark:border-gray-700">
+              {columns.map((column) => {
+                const isFiltered = filters[column.key]?.length > 0
+                const isSorted = sortConfig?.key === column.key
+                const isFilterable = column.filterable
+                const isSortable = column.sortable
+                const isInteractive = isFilterable || isSortable
 
-                  return (
-                    <th
-                      key={column.key}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
-                    >
-                      <div className="flex items-center gap-1">
-                        {hasFilter ? (
-                          <Popover>
-                            <PopoverTrigger asChild>
+                return (
+                  <th key={column.key} className="text-left py-3 px-4 relative">
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => {
+                          if (isFilterable) {
+                            handleFilterToggle(column.key)
+                          } else if (isSortable) {
+                            handleSort(column.key)
+                          }
+                        }}
+                        className={`flex items-center gap-1 text-sm font-medium transition-colors ${
+                          isFiltered
+                            ? "text-blue-600 dark:text-blue-400"
+                            : "text-gray-900 dark:text-white hover:text-gray-600 dark:hover:text-gray-300"
+                        } ${isInteractive ? "cursor-pointer" : "cursor-default"}`}
+                      >
+                        <span>{column.label}</span>
+
+                        {/* Show dropdown arrow for filterable columns */}
+                        {isFilterable && (
+                          <ChevronDownIcon
+                            className={`h-3 w-3 transition-colors ${
+                              isFiltered ? "text-blue-600 dark:text-blue-400" : "text-gray-400"
+                            }`}
+                          />
+                        )}
+
+                        {/* Show sort arrow for sortable (but not filterable) columns */}
+                        {isSortable && !isFilterable && isSorted && (
+                          <>
+                            {sortConfig.direction === "asc" ? (
+                              <ChevronUpIcon className="h-3 w-3 text-gray-600 dark:text-gray-400" />
+                            ) : (
+                              <ChevronDownIcon className="h-3 w-3 text-gray-600 dark:text-gray-400" />
+                            )}
+                          </>
+                        )}
+
+                        {/* Show filter count badge */}
+                        {isFiltered && (
+                          <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
+                            {filters[column.key].length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Filter Dropdown */}
+                    {isFilterable && openFilter === column.key && (
+                      <div
+                        ref={(el) => (dropdownRefs.current[column.key] = el)}
+                        className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-64 overflow-y-auto"
+                        style={{ zIndex: 9999 }}
+                      >
+                        <div className="p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              Filter by {column.label}
+                            </span>
+                            {filters[column.key]?.length > 0 && (
                               <button
-                                className={`flex items-center gap-1 hover:text-blue-500 transition-colors ${
-                                  activeFilters.length > 0 ? "text-blue-500" : ""
-                                }`}
+                                onClick={() => clearFilter(column.key)}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                               >
-                                <span>{column.label}</span>
-                                {column.sortable && sortColumn === column.key && (
-                                  <span className="text-blue-500">{sortDirection === "asc" ? "↑" : "↓"}</span>
-                                )}
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-64 p-0" align="start">
-                              <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-                                <h4 className="font-medium text-sm">Filter {column.label}</h4>
-                                {activeFilters.length > 0 && (
-                                  <p className="text-xs text-gray-500 mt-1">{activeFilters.length} selected</p>
-                                )}
-                              </div>
-                              <div className="max-h-64 overflow-y-auto">
-                                {uniqueValues.map((value) => (
-                                  <div
-                                    key={value}
-                                    className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"
-                                  >
-                                    <Checkbox
-                                      id={`${column.key}-${value}`}
-                                      checked={activeFilters.includes(value)}
-                                      onCheckedChange={(checked) =>
-                                        handleFilterChange(column.key, value, checked as boolean)
-                                      }
-                                    />
-                                    <label
-                                      htmlFor={`${column.key}-${value}`}
-                                      className="text-sm cursor-pointer flex-1 truncate"
-                                      title={value}
-                                    >
-                                      {value}
-                                    </label>
-                                  </div>
-                                ))}
-                              </div>
-                              {activeFilters.length > 0 && (
-                                <div className="p-3 border-t border-gray-200 dark:border-gray-700">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setColumnFilters((prev) => ({ ...prev, [column.key]: [] }))}
-                                    className="w-full"
-                                  >
-                                    Clear Filter
-                                  </Button>
-                                </div>
-                              )}
-                            </PopoverContent>
-                          </Popover>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <span>{column.label}</span>
-                            {column.sortable && (
-                              <button
-                                onClick={() => handleSort(column.key)}
-                                className="hover:text-blue-500 transition-colors"
-                              >
-                                {sortColumn === column.key && (
-                                  <span className="text-blue-500">{sortDirection === "asc" ? "↑" : "↓"}</span>
-                                )}
+                                Clear
                               </button>
                             )}
                           </div>
-                        )}
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {getUniqueValues(column.key).map((value) => (
+                              <label
+                                key={value}
+                                className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 rounded px-2 py-1"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={filters[column.key]?.includes(value) || false}
+                                  onChange={(e) => handleFilterChange(column.key, value, e.target.checked)}
+                                  className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1">
+                                  {value}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    </th>
-                  )
-                })}
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-transparent divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody>
             {sortedData.map((row, index) => (
-              <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                {columns
-                  .filter((col) => visibleColumns.includes(col.key))
-                  .map((column) => (
-                    <td key={column.key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {column.render ? column.render(row[column.key], row) : row[column.key]}
-                    </td>
-                  ))}
+              <tr
+                key={index}
+                className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+              >
+                {columns.map((column) => (
+                  <td key={column.key} className="py-4 px-4">
+                    {column.render ? column.render(row[column.key], row) : row[column.key]}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {sortedData.length === 0 && (
-        <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-          {hasActiveFilters ? "No data matches the current filters" : "No data found"}
+      {/* Filter Summary */}
+      {activeFilterCount > 0 && (
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-blue-700 dark:text-blue-300">
+              Showing {sortedData.length} of {data.length} applications
+              {activeFilterCount > 0 && (
+                <span className="ml-2">
+                  ({activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""} active)
+                </span>
+              )}
+            </div>
+            <button onClick={clearAllFilters} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+              Clear all filters
+            </button>
+          </div>
         </div>
       )}
 
-      {hasActiveFilters && (
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600 dark:text-gray-400">
-              Showing {sortedData.length} of {data.length} records
-            </span>
-            <div className="flex items-center gap-2">
-              {Object.entries(columnFilters).map(([columnKey, filters]) => {
-                if (filters.length === 0) return null
-                const column = columns.find((col) => col.key === columnKey)
-                return (
-                  <span
-                    key={columnKey}
-                    className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
-                  >
-                    {column?.label}: {filters.length}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
+      {sortedData.length === 0 && data.length > 0 && (
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+          No applications match the current filters.
         </div>
       )}
     </div>
