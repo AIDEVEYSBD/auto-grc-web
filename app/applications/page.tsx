@@ -126,18 +126,21 @@ export default function ApplicationsPage() {
       key: "name",
       label: "Application Name",
       sortable: true,
+      filterable: true,
       render: (value: string) => <div className="font-medium">{value || "Unnamed Application"}</div>,
     },
     {
       key: "owner_email",
       label: "Owner",
       sortable: true,
+      filterable: true,
       render: (value: string) => <div className="text-sm">{value || "-"}</div>,
     },
     {
       key: "criticality",
       label: "Criticality",
       sortable: true,
+      filterable: true,
       render: (value: string) => (
         <span
           className={`px-2 py-1 text-xs font-medium rounded-full ${
@@ -160,12 +163,14 @@ export default function ApplicationsPage() {
       key: "cloud-provider",
       label: "Cloud Provider",
       sortable: true,
+      filterable: true,
       render: (value: string) => <div className="text-sm">{value || "Not Specified"}</div>,
     },
     {
       key: "applicability",
       label: "Applicability",
       sortable: false,
+      filterable: true,
       render: (value: string, row: any) => {
         const currentCategory = value ? applicabilityCategoryMap.get(value) : null
         return <ApplicabilityDropdown application={row} currentApplicability={currentCategory} />
@@ -175,6 +180,7 @@ export default function ApplicationsPage() {
       key: "overall_score",
       label: "CIS Score",
       sortable: true,
+      filterable: true,
       render: (value: number, row: any) => {
         const score = value || 0
         return (
@@ -217,8 +223,7 @@ export default function ApplicationsPage() {
         ))}
       </div>
 
-      {/* Filters and View Toggle */}
-      {/* View Toggle Only */}
+      {/* View Toggle */}
       <div className="glass-card p-4 flex-shrink-0 mb-6">
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600 dark:text-gray-400">

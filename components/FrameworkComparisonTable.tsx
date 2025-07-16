@@ -108,10 +108,6 @@ export default function FrameworkComparisonTable({
 
   const selectedDomainData = processedData.find((d) => d.domainName === selectedDomain)
 
-selectedDomainData?.rows.forEach((domain) => {
- domain.masterControl.Controls = domain.masterControl.Controls.replace(/�/g, "'");
-});
-  
   return (
     <div className="glass-card h-[80vh] flex flex-col">
       <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
@@ -219,7 +215,6 @@ selectedDomainData?.rows.forEach((domain) => {
             </thead>
             <tbody>
               {selectedDomainData?.rows.map((row) => (
-      
                 <tr key={row.masterControl.id}>
                   <td className="sticky left-0 z-10 w-80 p-2 align-top bg-white dark:bg-gray-900 border-b border-r border-gray-200 dark:border-gray-700">
                     <div className="p-2 rounded-lg">
