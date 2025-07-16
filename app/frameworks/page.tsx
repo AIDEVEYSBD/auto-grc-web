@@ -20,9 +20,7 @@ export default function FrameworksPage() {
   const { data: frameworks, isLoading: frameworksLoading } = useFrameworks()
   const { data: mappings, isLoading: mappingsLoading } = useFrameworkMappings()
   const { totalControls, controls: allControls } = useFrameworkKPIs()
-
   const isLoading = frameworksLoading || mappingsLoading
-
   const [selectedFramework, setSelectedFramework] = useState<Framework | null>(null)
   const [isControlsModalOpen, setIsControlsModalOpen] = useState(false)
 
@@ -35,11 +33,12 @@ export default function FrameworksPage() {
     const data = frameworks.map((framework) => {
       const frameworkControls = allControls.filter((c) => c.framework_id === framework.id)
       const controlCount = frameworkControls.length
-      let overlap
 
+      let overlap
       if (!framework.master && masterFramework) {
         const frameworkControlIds = new Set(frameworkControls.map((c) => c.id))
         const mappedControls = new Set()
+
         mappings.forEach((mapping) => {
           if (frameworkControlIds.has(mapping.source_control_id) && masterControlIds.has(mapping.target_control_id)) {
             mappedControls.add(mapping.source_control_id)
@@ -48,6 +47,7 @@ export default function FrameworksPage() {
             mappedControls.add(mapping.target_control_id)
           }
         })
+
         const mappedCount = mappedControls.size
         const percentage = controlCount > 0 ? Math.round((mappedCount / controlCount) * 100) : 0
         overlap = { mapped: mappedCount, percentage }
@@ -64,9 +64,11 @@ export default function FrameworksPage() {
 
   const handleSetMaster = async (frameworkId: string) => {
     if (!frameworks) return
+
     const originalFrameworks = [...frameworks]
     const newFrameworks = frameworks.map((f) => ({ ...f, master: f.id === frameworkId }))
     mutate("frameworks", newFrameworks, false)
+
     try {
       await setMasterFramework(frameworkId)
       mutate("frameworks")
@@ -82,6 +84,7 @@ export default function FrameworksPage() {
     if (!newFrameworks || newFrameworks.length === 0) {
       throw new Error("Failed to create framework record in the database.")
     }
+
     const frameworkId = newFrameworks[0].id
 
     // Step 2: Send file and ID to the external API
@@ -118,6 +121,10 @@ export default function FrameworksPage() {
   const handleControlsModalClose = () => {
     setIsControlsModalOpen(false)
     setSelectedFramework(null)
+  }
+
+  const handleMappingsChange = () => {
+    mutate("framework-mappings")
   }
 
   const kpiData: KPIData[] = [
@@ -195,6 +202,7 @@ export default function FrameworksPage() {
             otherFrameworks={otherFrameworks}
             allControls={allControls}
             allMappings={mappings}
+            onMappingsChange={handleMappingsChange}
           />
         )}
 

@@ -95,6 +95,17 @@ export interface Mapping {
   created_at?: string
 }
 
+export interface FrameworkMapping {
+  id: string
+  source_control_id: string
+  target_control_id: string
+  source_framework_id: string
+  target_framework_id: string
+  mapping_type: string
+  confidence?: number
+  created_at?: string
+}
+
 export interface Capability {
   id: string
   name: string
