@@ -14,11 +14,12 @@ import { useFrameworkMappings } from "@/lib/queries/mappings"
 import type { KPIData } from "@/types"
 import FrameworkControlsModal from "@/components/FrameworkControlsModal"
 import type { Framework } from "@/types"
+import useSWR from "swr"
 
 export default function FrameworksPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const { data: frameworks, isLoading: frameworksLoading } = useFrameworks()
-  const { data: mappings, isLoading: mappingsLoading } = useFrameworkMappings()
+  const { data: mappings, isLoading: mappingsLoading , mutate: mutateMappings } = useFrameworkMappings()
   const { totalControls, controls: allControls } = useFrameworkKPIs()
 
   const isLoading = frameworksLoading || mappingsLoading
@@ -195,6 +196,7 @@ export default function FrameworksPage() {
             otherFrameworks={otherFrameworks}
             allControls={allControls}
             allMappings={mappings}
+            mutateMappings={mutateMappings} 
           />
         )}
 
