@@ -235,10 +235,11 @@ export default function DataTable({ data, columns, loading = false, onFilteredDa
                     {/* Filter Dropdown */}
                     {isFilterable && openFilter === column.key && (
                       <div
-                        ref={(el) => (dropdownRefs.current[column.key] = el)}
-                        className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-64 overflow-y-auto"
-                        style={{ zIndex: 2147483647 }} // Max 32-bit integer (browser-safe max z-index)
-                      >
+  ref={(el) => (dropdownRefs.current[column.key] = el)}
+  className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-56 overflow-y-auto"
+  style={{ zIndex: 2147483647 }}
+>
+
                         <div className="p-3">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-medium text-gray-900 dark:text-white">
@@ -253,7 +254,7 @@ export default function DataTable({ data, columns, loading = false, onFilteredDa
                               </button>
                             )}
                           </div>
-                          <div className="space-y-2 max-h-56 overflow-y-auto">
+                          <div className="space-y-2">
 
   {/* Sorting Controls */}
   {column.sortable && (
