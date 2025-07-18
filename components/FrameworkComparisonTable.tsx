@@ -149,6 +149,7 @@ selectedDomainData?.rows.forEach((domain) => {
                   setSaving(false)
                   setEditMode(false)
                   setEditingCell(null)
+                  window.location.reload()
                 }
               }}
             >
