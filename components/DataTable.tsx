@@ -46,6 +46,11 @@ export default function DataTable({ data, columns, loading = false, onFilteredDa
       // Special handling for score ranges
       return ["0-49% (Critical)", "50-79% (Warning)", "80-100% (Compliant)", "Not Scored"]
     }
+      if (key === "applicability") {
+    // assumes your data rows include an `applicability_name` field
+    const vals = data.map((item) => item.category_name ?? "Not Set")
+    return [...new Set(vals)].sort()
+  }
 
     const values = data.map((item) => {
       const value = item[key]
