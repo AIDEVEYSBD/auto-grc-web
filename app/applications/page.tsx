@@ -1,6 +1,7 @@
 "use client"
 
 import React from "react"
+import Link from "next/link"
 
 import { useState, useMemo } from "react"
 import { ViewColumnsIcon, Squares2X2Icon, FunnelIcon } from "@heroicons/react/24/outline"
@@ -194,7 +195,11 @@ export default function ApplicationsPage() {
       key: "name",
       label: "Application Name",
       sortable: true,
-      render: (value: string) => <div className="font-medium">{value || "Unnamed Application"}</div>,
+      render: (value: string, row: any) => (
+        <Link href={`/applications/${row.id}`} className="font-medium text-blue-600 hover:underline">
+          {value || "Unnamed Application"}
+        </Link>
+      ),
     },
     {
       key: "owner_email",
@@ -460,10 +465,14 @@ export default function ApplicationsPage() {
           <div className="h-full overflow-y-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
               {filteredApplications.map((app) => {
-                const currentCategory = app.applicability ? applicabilityCategoryMap.get(app.applicability) : null
-                const score = app.overall_score || 0
+                const currentCategory = app.applicability ? applicabilityCategoryMap.get(app.applicability) : null;
+                const score = app.overall_score || 0;
                 return (
-                  <div key={app.id} className="glass-card p-6">
+                  <Link
+                    key={app.id}
+                    href={`/applications/${app.id}`}
+                    className="glass-card p-6 block hover:shadow-lg transition-shadow"
+                  >
                     <div className="flex items-start justify-between mb-4">
                       <div className="min-w-0 flex-1">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
@@ -509,8 +518,8 @@ export default function ApplicationsPage() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
+                  </Link>
+                );
               })}
             </div>
           </div>
