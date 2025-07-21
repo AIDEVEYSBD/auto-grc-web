@@ -274,7 +274,7 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col min-h-screen overflow-auto">
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0 mb-6">
         <div>
@@ -454,9 +454,9 @@ export default function ApplicationsPage() {
       </div>
 
       {/* Applications Data - Scrollable Container */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0">
         {viewMode === "table" ? (
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-y-auto max-h-[350px]">
             <div className="glass-card">
               <DataTable data={filteredApplications} columns={columns} loading={isLoading || isLoadingScores} />
             </div>
