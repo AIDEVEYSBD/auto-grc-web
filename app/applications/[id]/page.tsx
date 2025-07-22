@@ -2,6 +2,7 @@
 import { useParams } from "next/navigation"
 import { Line } from 'react-chartjs-2'
 import { useState } from "react";
+import { exportDashboardPDF } from "@/lib/exportDashboardPDF";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -28,6 +29,10 @@ export default function ApplicationDashboard() {
   const appId = params?.id
   const id = Array.isArray(appId) ? appId[0] : appId
   const { application: app,complianceSummary,complianceDetails, loading, error } = useApplicationComplianceDetails(id)
+
+  const handleExportPDF = () => {
+    exportDashboardPDF({ app, complianceSummary, complianceDetails });
+  };
 
 const [currentPage, setCurrentPage] = useState(1)
 const itemsPerPage = 10
@@ -177,7 +182,7 @@ const paginatedData = complianceDetails.slice((currentPage - 1) * itemsPerPage, 
               </svg>
               Refresh
             </Button>
-            <Button className="bg-gradient-to-r from-blue-500 to-purple-500 text-white flex items-center gap-2 px-6 py-2 rounded-xl shadow-none">
+            <Button onClick={handleExportPDF} className="bg-gradient-to-r from-blue-500 to-purple-500 text-white flex items-center gap-2 px-6 py-2 rounded-xl shadow-none">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5v-9m0 9l-3.75-3.75M12 16.5l3.75-3.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
