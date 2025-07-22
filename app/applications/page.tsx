@@ -1,7 +1,9 @@
 "use client"
 
 import React from "react"
+import Link from "next/link"
 import { supabase } from "@/lib/supabase"
+
 
 import { useState, useMemo, useCallback } from "react"
 import { ViewColumnsIcon, Squares2X2Icon } from "@heroicons/react/24/outline"
@@ -130,8 +132,11 @@ export default function ApplicationsPage() {
       key: "name",
       label: "Application Name",
       sortable: true,
-      filterable: true,
-      render: (value: string) => <div className="font-medium">{value || "Unnamed Application"}</div>,
+      render: (value: string, row: any) => (
+        <Link href={`/applications/${row.id}`} className="font-medium text-blue-600 hover:underline">
+          {value || "Unnamed Application"}
+        </Link>
+      ),
     },
     {
       key: "owner_email",
@@ -211,7 +216,7 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col min-h-screen overflow-auto">
       {/* Header */}
       <div className="flex items-center justify-between flex-shrink-0 mb-6">
         <div>
@@ -265,9 +270,9 @@ export default function ApplicationsPage() {
       </div>
 
       {/* Applications Data - Scrollable Container */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0">
         {viewMode === "table" ? (
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-y-auto max-h-[350px]">
             <div className="glass-card">
               <DataTable
                 data={applicationsWithScores}
@@ -281,10 +286,14 @@ export default function ApplicationsPage() {
           <div className="h-full overflow-y-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
               {filteredApplications.map((app) => {
-                const currentCategory = app.applicability ? applicabilityCategoryMap.get(app.applicability) : null
-                const score = app.overall_score || 0
+                const currentCategory = app.applicability ? applicabilityCategoryMap.get(app.applicability) : null;
+                const score = app.overall_score || 0;
                 return (
-                  <div key={app.id} className="glass-card p-6">
+                  <Link
+                    key={app.id}
+                    href={`/applications/${app.id}`}
+                    className="glass-card p-6 block hover:shadow-lg transition-shadow"
+                  >
                     <div className="flex items-start justify-between mb-4">
                       <div className="min-w-0 flex-1">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
@@ -330,8 +339,8 @@ export default function ApplicationsPage() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
+                  </Link>
+                );
               })}
             </div>
           </div>
