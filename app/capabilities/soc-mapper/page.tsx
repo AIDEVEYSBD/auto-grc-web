@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import {
   ChartBarIcon,
   CloudArrowUpIcon,
@@ -21,15 +21,47 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
 
-interface JobStatus {
-  id: string
-  status: "pending" | "processing" | "completed" | "failed"
+interface ProcessingStatus {
+  status: "idle" | "uploading" | "processing" | "completed" | "failed"
   progress: number
-  fileName: string
-  startTime: number
+  fileName?: string
+  startTime?: number
   completedAt?: number
-  resultUrl?: string
   error?: string
+}
+
+interface ProcessingResult {
+  status: string
+  filename: string
+  processing_config: {
+    start_page: number
+    end_page: number
+    sample_control_id: string
+  }
+  parser_results: {
+    extracted_text_length: number
+    text_chunks_count: number
+    text_chunks: Array<{
+      "Control ID": string
+      "Content": string
+    }>
+    tables_count: number
+    tables: any[]
+    regex_pattern_used: string
+  }
+  rag_results: {
+    status: string
+    matches_count: number
+    matches: Array<{
+      source_id: string
+      source_text: string
+      target_id: string
+      target_text: string
+      rank: number
+    }>
+    source_framework: string
+    top_k: number
+  }
 }
 
 interface ExcelSheet {
@@ -42,81 +74,89 @@ interface ExcelData {
   fileName: string
 }
 
+// Change this to your server URL
+const API_BASE_URL = "http://localhost:8000"
+
 export default function SocMapperPage() {
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [currentJob, setCurrentJob] = useState<JobStatus | null>(null)
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
+    status: "idle",
+    progress: 0
+  })
+  const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [excelData, setExcelData] = useState<ExcelData | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
 
-  // Load job from localStorage on mount
-  useEffect(() => {
-    const savedJob = localStorage.getItem("socMapperJob")
-    if (savedJob) {
-      const job = JSON.parse(savedJob) as JobStatus
-      if (job.status !== "completed" && job.status !== "failed") {
-        setCurrentJob(job)
-        startPolling(job.id)
-      } else {
-        setCurrentJob(job)
-      }
-    }
-  }, [])
+  const convertResultToExcel = useCallback((result: ProcessingResult): ExcelData => {
+    const sheets: ExcelSheet[] = []
 
-  // Save job to localStorage whenever it changes
-  useEffect(() => {
-    if (currentJob) {
-      localStorage.setItem("socMapperJob", JSON.stringify(currentJob))
-    }
-  }, [currentJob])
-
-  const startPolling = useCallback((jobId: string) => {
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`https://soc.autogrc.cloud/api/jobs/${jobId}/status`)
-        const jobStatus = await response.json()
-
-        setCurrentJob((prev) => (prev ? { ...prev, ...jobStatus } : null))
-
-        if (jobStatus.status === "completed" || jobStatus.status === "failed") {
-          clearInterval(pollInterval)
-          if (jobStatus.status === "completed" && jobStatus.resultUrl) {
-            await downloadAndParseResult(jobStatus.resultUrl)
-          }
-        }
-      } catch (error) {
-        console.error("Error polling job status:", error)
-        toast.error("Failed to check job status")
-      }
-    }, 5000) // Poll every 5 seconds
-
-    return () => clearInterval(pollInterval)
-  }, [])
-
-  const downloadAndParseResult = async (resultUrl: string) => {
-    try {
-      const response = await fetch(resultUrl)
-      const arrayBuffer = await response.arrayBuffer()
-      const workbook = XLSX.read(arrayBuffer, { type: "array" })
-
-      const sheets: ExcelSheet[] = workbook.SheetNames.map((sheetName) => ({
-        name: sheetName,
-        data: XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 }),
-      }))
-
-      setExcelData({
-        sheets,
-        fileName: currentJob?.fileName.replace(".pdf", "_mapped.xlsx") || "soc_mapping_result.xlsx",
+    // Sheet 1: RAG Mapping Results
+    if (result.rag_results.matches && result.rag_results.matches.length > 0) {
+      const mappingData = [
+        ["Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text"]
+      ]
+      
+      result.rag_results.matches.forEach(match => {
+        mappingData.push([
+          match.rank,
+          match.source_id,
+          match.source_text.substring(0, 200) + (match.source_text.length > 200 ? "..." : ""),
+          match.target_id,
+          match.target_text.substring(0, 200) + (match.target_text.length > 200 ? "..." : "")
+        ])
       })
 
-      setShowResultModal(true)
-      toast.success("SOC mapping completed successfully!")
-    } catch (error) {
-      console.error("Error downloading result:", error)
-      toast.error("Failed to download mapping result")
+      sheets.push({
+        name: "RAG Mapping Results",
+        data: mappingData
+      })
     }
-  }
+
+    // Sheet 2: Extracted SOC Controls
+    if (result.parser_results.text_chunks && result.parser_results.text_chunks.length > 0) {
+      const chunksData = [
+        ["Control ID", "Control Content"]
+      ]
+      
+      result.parser_results.text_chunks.forEach(chunk => {
+        chunksData.push([
+          chunk["Control ID"],
+          chunk["Content"]
+        ])
+      })
+
+      sheets.push({
+        name: "Extracted SOC Controls",
+        data: chunksData
+      })
+    }
+
+    // Sheet 3: Processing Summary
+    const summaryData = [
+      ["Metric", "Value"],
+      ["Filename", result.filename],
+      ["Pages Processed", `${result.processing_config.start_page} - ${result.processing_config.end_page}`],
+      ["Regex Pattern", result.processing_config.sample_control_id],
+      ["Extracted Text Length", result.parser_results.extracted_text_length],
+      ["Text Chunks Found", result.parser_results.text_chunks_count],
+      ["Tables Found", result.parser_results.tables_count],
+      ["RAG Status", result.rag_results.status],
+      ["Total Matches", result.rag_results.matches_count],
+      ["Source Framework", result.rag_results.source_framework || "N/A"],
+      ["Top K Matches", result.rag_results.top_k || "N/A"]
+    ]
+
+    sheets.push({
+      name: "Processing Summary",
+      data: summaryData
+    })
+
+    return {
+      sheets,
+      fileName: result.filename.replace(".pdf", "_soc_mapping.xlsx")
+    }
+  }, [])
 
   const handleFileSelect = (selectedFile: File) => {
     if (selectedFile.type !== "application/pdf") {
@@ -163,85 +203,112 @@ export default function SocMapperPage() {
   const uploadFile = async () => {
     if (!file) return
 
-    setIsUploading(true)
+    setProcessingStatus({
+      status: "uploading",
+      progress: 10,
+      fileName: file.name,
+      startTime: Date.now()
+    })
+
     const formData = new FormData()
     formData.append("file", file)
 
     try {
-      const response = await fetch("https://soc.autogrc.cloud/api/upload-soc-report", {
+      // Simulate progress during upload
+      setProcessingStatus(prev => ({ ...prev, status: "processing", progress: 30 }))
+
+      const response = await fetch(`${API_BASE_URL}/upload-soc-report`, {
         method: "POST",
         body: formData,
       })
 
       if (!response.ok) {
-        throw new Error("Upload failed")
+        const errorData = await response.json().catch(() => ({ detail: "Upload failed" }))
+        throw new Error(errorData.detail || "Upload failed")
       }
 
-      const result = await response.json()
-      const newJob: JobStatus = {
-        id: result.jobId,
-        status: "pending",
-        progress: 0,
-        fileName: file.name,
-        startTime: Date.now(),
-      }
+      setProcessingStatus(prev => ({ ...prev, progress: 70 }))
 
-      setCurrentJob(newJob)
+      const result: ProcessingResult = await response.json()
+      
+      setProcessingStatus(prev => ({ 
+        ...prev, 
+        status: "completed", 
+        progress: 100,
+        completedAt: Date.now()
+      }))
+
+      setProcessingResult(result)
+      
+      // Convert result to Excel format
+      const excelData = convertResultToExcel(result)
+      setExcelData(excelData)
+      
       setFile(null)
-      startPolling(result.jobId)
-      toast.success("SOC report uploaded successfully. Processing started.")
+      
+      if (result.rag_results.status === "completed") {
+        toast.success("SOC mapping completed successfully!")
+      } else {
+        toast.warning(`Processing completed but RAG matching: ${result.rag_results.status}`)
+      }
+
     } catch (error) {
       console.error("Upload error:", error)
+      setProcessingStatus(prev => ({
+        ...prev,
+        status: "failed",
+        error: error instanceof Error ? error.message : "Upload failed"
+      }))
       toast.error("Failed to upload SOC report")
-    } finally {
-      setIsUploading(false)
     }
   }
 
   const downloadExcel = () => {
-    if (!excelData || !currentJob?.resultUrl) return
+    if (!excelData) return
 
-    // Create a link to download the original Excel file
-    const link = document.createElement("a")
-    link.href = currentJob.resultUrl
-    link.download = excelData.fileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    // Create workbook
+    const workbook = XLSX.utils.book_new()
+    
+    excelData.sheets.forEach(sheet => {
+      const worksheet = XLSX.utils.aoa_to_sheet(sheet.data)
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name)
+    })
+
+    // Download
+    XLSX.writeFile(workbook, excelData.fileName)
   }
 
-  const resetJob = () => {
-    setCurrentJob(null)
+  const resetProcessing = () => {
+    setProcessingStatus({ status: "idle", progress: 0 })
+    setProcessingResult(null)
     setExcelData(null)
     setShowResultModal(false)
-    localStorage.removeItem("socMapperJob")
   }
 
   const getStatusIcon = () => {
-    if (!currentJob) return null
-
-    switch (currentJob.status) {
+    switch (processingStatus.status) {
       case "completed":
         return <CheckCircleIcon className="h-6 w-6 text-green-500" />
       case "failed":
         return <ExclamationCircleIcon className="h-6 w-6 text-red-500" />
-      default:
+      case "uploading":
+      case "processing":
         return <div className="h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      default:
+        return null
     }
   }
 
   const getStatusText = () => {
-    if (!currentJob) return ""
-
-    switch (currentJob.status) {
-      case "pending":
-        return "Queued for processing..."
+    switch (processingStatus.status) {
+      case "uploading":
+        return "Uploading SOC report..."
       case "processing":
-        return "Mapping SOC controls to frameworks..."
+        return "Processing and mapping controls..."
       case "completed":
-        return "Mapping completed successfully!"
+        return "Processing completed successfully!"
       case "failed":
-        return currentJob.error || "Processing failed"
+        return processingStatus.error || "Processing failed"
       default:
         return ""
     }
@@ -258,10 +325,10 @@ export default function SocMapperPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">SOC Mapper</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Map SOC2 Type2 reports against selected frameworks</p>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">Map SOC2 Type2 reports against CIS framework</p>
       </div>
 
-      {!currentJob ? (
+      {processingStatus.status === "idle" ? (
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -269,7 +336,7 @@ export default function SocMapperPage() {
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
-              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to compliance frameworks
+              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -314,8 +381,8 @@ export default function SocMapperPage() {
                   <Button variant="outline" size="sm" onClick={() => setFile(null)}>
                     Remove
                   </Button>
-                  <Button onClick={uploadFile} disabled={isUploading} size="sm">
-                    {isUploading ? "Uploading..." : "Start Mapping"}
+                  <Button onClick={uploadFile} size="sm">
+                    Start Mapping
                   </Button>
                 </div>
               </div>
@@ -330,49 +397,77 @@ export default function SocMapperPage() {
               Processing SOC Report
             </CardTitle>
             <CardDescription>
-              {currentJob.fileName} • Started {formatDuration(currentJob.startTime)}
-              {currentJob.completedAt &&
-                ` • Completed in ${formatDuration(currentJob.startTime, currentJob.completedAt)}`}
+              {processingStatus.fileName} 
+              {processingStatus.startTime && ` • Started ${formatDuration(processingStatus.startTime)}`}
+              {processingStatus.completedAt &&
+                ` • Completed in ${formatDuration(processingStatus.startTime!, processingStatus.completedAt)}`}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>{getStatusText()}</span>
-                <span>{currentJob.progress}%</span>
+                <span>{processingStatus.progress}%</span>
               </div>
-              <Progress value={currentJob.progress} className="w-full" />
+              <Progress value={processingStatus.progress} className="w-full" />
             </div>
 
-            {currentJob.status === "completed" && (
-              <div className="flex gap-3">
-                <Button onClick={() => setShowResultModal(true)}>View Results</Button>
-                <Button variant="outline" onClick={downloadExcel}>
-                  <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                  Download Excel
-                </Button>
-                <Button variant="outline" onClick={resetJob}>
-                  Start New Mapping
-                </Button>
+            {processingStatus.status === "completed" && processingResult && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">
+                    <p className="font-medium text-blue-900 dark:text-blue-100">Controls Found</p>
+                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      {processingResult.parser_results.text_chunks_count}
+                    </p>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-lg">
+                    <p className="font-medium text-green-900 dark:text-green-100">RAG Matches</p>
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      {processingResult.rag_results.matches_count}
+                    </p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg">
+                    <p className="font-medium text-purple-900 dark:text-purple-100">Tables Found</p>
+                    <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                      {processingResult.parser_results.tables_count}
+                    </p>
+                  </div>
+                  <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
+                    <p className="font-medium text-orange-900 dark:text-orange-100">Text Length</p>
+                    <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                      {Math.round(processingResult.parser_results.extracted_text_length / 1000)}K
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button onClick={() => setShowResultModal(true)}>View Results</Button>
+                  <Button variant="outline" onClick={downloadExcel}>
+                    <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                    Download Excel
+                  </Button>
+                  <Button variant="outline" onClick={resetProcessing}>
+                    Start New Mapping
+                  </Button>
+                </div>
               </div>
             )}
 
-            {currentJob.status === "failed" && (
+            {processingStatus.status === "failed" && (
               <div className="flex gap-3">
-                <Button variant="outline" onClick={resetJob}>
+                <Button variant="outline" onClick={resetProcessing}>
                   Try Again
                 </Button>
               </div>
             )}
 
-            {(currentJob.status === "pending" || currentJob.status === "processing") && (
+            {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
               <div className="text-sm text-gray-600 dark:text-gray-400">
-                <p>• Extracting controls from SOC report</p>
-                <p>• Mapping to compliance frameworks</p>
-                <p>• Generating detailed mapping report</p>
-                <p className="mt-2 font-medium">
-                  This process can take up to 1 hour. You can safely navigate away from this page.
-                </p>
+                <p>• Extracting controls from SOC report (pages 36-81)</p>
+                <p>• Generating regex patterns for chunking</p>
+                <p>• Running RAG matching against CIS framework</p>
+                <p>• Processing completed synchronously</p>
               </div>
             )}
           </CardContent>
