@@ -75,7 +75,7 @@ interface ExcelData {
 }
 
 // Change this to your server URL
-const API_BASE_URL = "http://localhost:8000"
+const API_BASE_URL = "https://soc.autogrc.cloud"
 
 export default function SocMapperPage() {
   const [file, setFile] = useState<File | null>(null)
