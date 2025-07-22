@@ -1,6 +1,7 @@
 "use client"
 import { useParams } from "next/navigation"
 import { Line } from 'react-chartjs-2'
+import { useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -20,22 +21,22 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useAllApplicationDetails } from "./useAllApplicationDetails"
-
+import { useApplicationComplianceDetails } from "./useAllApplicationDetails";
+import Loader from "@/components/Loader";
 export default function ApplicationDashboard() {
   const params = useParams()
   const appId = params?.id
   const id = Array.isArray(appId) ? appId[0] : appId
-  const { application: app, ccm, crowdstrike, wiz, loading, error } = useAllApplicationDetails(id)
+  const { application: app,complianceSummary,complianceDetails, loading, error } = useApplicationComplianceDetails(id)
 
+const [currentPage, setCurrentPage] = useState(1)
+const itemsPerPage = 10
+
+const totalPages = Math.ceil(complianceDetails.length / itemsPerPage)
+const paginatedData = complianceDetails.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <span className="text-lg text-gray-600">Loading application details...</span>
-        </div>
-      </div>
+   <Loader></Loader>
     )
   }
 
@@ -166,10 +167,11 @@ export default function ApplicationDashboard() {
       <div className="max-w-full mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{app.name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{app.name} {getCriticalityBadge(app.criticality)}</h1>
+            
           </div>
           <div className="flex gap-3">
-            <Button className="bg-[#101522] text-white border border-[#232a44] hover:bg-[#232a44] flex items-center gap-2 px-6 py-2 rounded-xl shadow-none">
+            <Button   onClick={() => window.location.reload()} className="bg-[#101522] text-white border border-[#232a44] hover:bg-[#232a44] flex items-center gap-2 px-6 py-2 rounded-xl shadow-none">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12a9.75 9.75 0 0117.28-6.72M21.75 12a9.75 9.75 0 01-17.28 6.72M12 6.75v6l4.03 2.42" />
               </svg>
@@ -290,15 +292,46 @@ export default function ApplicationDashboard() {
                 </div>
               </div>
             </div>
-            <div className="mt-4">{getCriticalityBadge(app.criticality)}</div>
+            
           </div>
 
           {/* Compliance Summary Card (empty for now) */}
-          <div className="bg-white dark:bg-[#151a2b] border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full min-h-[340px]">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Compliance Summary</h2>
-            {/* Content to be added later */}
-            <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-600">(No data yet)</div>
-          </div>
+         <div className="bg-white dark:bg-[#151a2b] border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full min-h-[340px]">
+  <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Compliance Summary</h2>
+
+  {complianceSummary ? (
+    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+      <div className="flex justify-between">
+        <span>Total Controls:</span>
+        <span>{complianceSummary.totalControls}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Fully Met:</span>
+        <span className="text-green-500 font-semibold">{complianceSummary.fullyMet}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Partially Met:</span>
+        <span className="text-yellow-400 font-semibold">{complianceSummary.partiallyMet}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Not Met:</span>
+        <span className="text-red-500 font-semibold">{complianceSummary.notMet}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Average Score:</span>
+        <span className="font-bold">{complianceSummary.avgScore}%</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Last Assessed:</span>
+        <span>{complianceSummary.latestAssessed ? new Date(complianceSummary.latestAssessed).toLocaleDateString() : "N/A"}</span>
+      </div>
+    </div>
+  ) : (
+    <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-600">
+      No compliance data available.
+    </div>
+  )}
+</div>
 
           {/* Compliance Trends Card */}
           <div className="bg-white dark:bg-[#151a2b] border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm p-6 flex flex-col h-full min-h-[340px]">
@@ -353,6 +386,63 @@ export default function ApplicationDashboard() {
             </div>
           </div>
         </div>
+<div className="bg-white dark:bg-[#151a2b] border border-gray-200 dark:border-gray-800 rounded-xl shadow-sm p-6 mt-6">
+  <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Compliance Details</h2>
+
+  {complianceSummary && complianceSummary.totalControls > 0 ? (
+    <>
+      <div className="overflow-auto max-h-96 border rounded-lg">
+        <table className="min-w-full">
+          <thead className="sticky top-0 z-10 bg-white dark:bg-[#151a2b]">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Control ID</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Domain</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Control</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Status</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Score</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Source</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Assessed At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedData.map((detail, idx) => (
+              <tr key={detail.control_id + idx} className="border-b border-gray-200 dark:border-gray-800">
+                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{detail.control_id}</td>
+                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{detail.domain}</td>
+                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{detail.control}</td>
+                <td className={
+                  `px-4 py-2 text-sm font-semibold ` +
+                  (detail.status === "Fully Met" ? "text-green-500" :
+                  detail.status === "Partially Met" ? "text-yellow-400" : "text-red-500")
+                }>{detail.status}</td>
+                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{detail.score}</td>
+                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{detail.source}</td>
+                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{new Date(detail.assessed_at).toLocaleDateString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex justify-between items-center mt-4 text-sm text-gray-700 dark:text-gray-300">
+        <span>Page {currentPage} of {totalPages} &nbsp;|&nbsp; Total Rows: {complianceDetails.length}</span>
+        <div className="space-x-2">
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>
+            Previous
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+            Next
+          </Button>
+        </div>
+      </div>
+    </>
+  ) : (
+    <div className="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-600">
+      No compliance details available.
+    </div>
+  )}
+</div>
+
       </div>
     // </div>
   )

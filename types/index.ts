@@ -79,7 +79,7 @@ export interface Application {
   owner_email: string
   criticality: string
   "cloud-provider": string
-  overall_score: number
+  overall_score?: number
   applicability?: string | null
   created_at: string
 }
@@ -115,4 +115,21 @@ export interface MarketplaceTool {
 export interface ApplicabilityCategory {
   id: string
   category_name: string
+}
+export interface ComplianceSummary {
+  totalControls: number;
+  partiallyMet: number;
+  fullyMet: number;
+  notMet: number;
+  latestAssessed: string | null;
+  avgScore: number;
+}
+export interface ComplianceDetails {
+  control_id: string;
+  control: string;
+  domain: string;
+  score: number;
+  status: string; // Use literal types if possible
+  source: string;
+  assessed_at: string; // ISO date string (use Date if you parse it)
 }
