@@ -456,7 +456,7 @@ export default function ApplicationsPage() {
       {/* Applications Data - Scrollable Container */}
       <div className="flex-1 min-h-0">
         {viewMode === "table" ? (
-          <div className="h-full overflow-y-auto max-h-[350px]">
+          <div className="h-full overflow-y-auto ">
             <div className="glass-card">
               <DataTable data={filteredApplications} columns={columns} loading={isLoading || isLoadingScores} />
             </div>

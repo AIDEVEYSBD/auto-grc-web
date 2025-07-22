@@ -270,7 +270,7 @@ const paginatedData = complianceDetails.slice((currentPage - 1) * itemsPerPage, 
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600 dark:text-gray-300">Overall Score:</span>
                   {(() => {
-                    const score = app.overall_score || 0;
+                    const score = complianceSummary?.avgScore || 0;
                     let badgeColor = "bg-red-500 text-white";
                     if (score >= 80) badgeColor = "bg-green-500 text-white";
                     else if (score >= 50) badgeColor = "bg-yellow-400 text-gray-900";
