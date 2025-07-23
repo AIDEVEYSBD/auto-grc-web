@@ -200,60 +200,83 @@ export default function SocMapperPage() {
     }
   }
 
-  const uploadFile = async () => {
-    if (!file) return
+  // Replace the uploadFile function in your React component with this version
 
-    setProcessingStatus({
-      status: "uploading",
-      progress: 10,
-      fileName: file.name,
-      startTime: Date.now()
+const uploadFile = async () => {
+  if (!file) return
+
+  setProcessingStatus({
+    status: "uploading",
+    progress: 10,
+    fileName: file.name,
+    startTime: Date.now()
+  })
+
+  const formData = new FormData()
+  formData.append("file", file)
+
+  try {
+    // Simulate progress during upload
+    setProcessingStatus(prev => ({ ...prev, status: "processing", progress: 30 }))
+
+    // Create AbortController for manual cancellation if needed
+    const controller = new AbortController()
+    
+    const response = await fetch(`${API_BASE_URL}/upload-soc-report`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+      // Set a very long timeout - 3 hours (10800000 ms)
+      // Note: This may still be limited by browser/proxy timeouts
+      timeout: 10800000,
+      headers: {
+        // Add keep-alive header to help maintain connection
+        'Connection': 'keep-alive'
+      }
     })
 
-    const formData = new FormData()
-    formData.append("file", file)
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: "Upload failed" }))
+      throw new Error(errorData.detail || "Upload failed")
+    }
 
-    try {
-      // Simulate progress during upload
-      setProcessingStatus(prev => ({ ...prev, status: "processing", progress: 30 }))
+    setProcessingStatus(prev => ({ ...prev, progress: 70 }))
 
-      const response = await fetch(`${API_BASE_URL}/upload-soc-report`, {
-        method: "POST",
-        body: formData,
-      })
+    const result: ProcessingResult = await response.json()
+    
+    setProcessingStatus(prev => ({ 
+      ...prev, 
+      status: "completed", 
+      progress: 100,
+      completedAt: Date.now()
+    }))
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: "Upload failed" }))
-        throw new Error(errorData.detail || "Upload failed")
-      }
+    setProcessingResult(result)
+    
+    // Convert result to Excel format
+    const excelData = convertResultToExcel(result)
+    setExcelData(excelData)
+    
+    setFile(null)
+    
+    if (result.rag_results.status === "completed") {
+      toast.success("SOC mapping completed successfully!")
+    } else {
+      toast.warning(`Processing completed but RAG matching: ${result.rag_results.status}`)
+    }
 
-      setProcessingStatus(prev => ({ ...prev, progress: 70 }))
-
-      const result: ProcessingResult = await response.json()
-      
-      setProcessingStatus(prev => ({ 
-        ...prev, 
-        status: "completed", 
-        progress: 100,
-        completedAt: Date.now()
+  } catch (error) {
+    console.error("Upload error:", error)
+    
+    // Check if it's a timeout error specifically
+    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('timeout'))) {
+      setProcessingStatus(prev => ({
+        ...prev,
+        status: "failed",
+        error: "Request timed out. The process may still be running on the server. Please try checking back later or contact support."
       }))
-
-      setProcessingResult(result)
-      
-      // Convert result to Excel format
-      const excelData = convertResultToExcel(result)
-      setExcelData(excelData)
-      
-      setFile(null)
-      
-      if (result.rag_results.status === "completed") {
-        toast.success("SOC mapping completed successfully!")
-      } else {
-        toast.warning(`Processing completed but RAG matching: ${result.rag_results.status}`)
-      }
-
-    } catch (error) {
-      console.error("Upload error:", error)
+      toast.error("Request timed out - process may still be running on server")
+    } else {
       setProcessingStatus(prev => ({
         ...prev,
         status: "failed",
@@ -262,6 +285,7 @@ export default function SocMapperPage() {
       toast.error("Failed to upload SOC report")
     }
   }
+}
 
   const downloadExcel = () => {
     if (!excelData) return
