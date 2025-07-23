@@ -406,7 +406,7 @@ const paginatedData = complianceDetails.slice((currentPage - 1) * itemsPerPage, 
               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Status</th>
               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Score</th>
               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Source</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Assessed At</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151a2b]">Assessed On</th>
             </tr>
           </thead>
           <tbody>
