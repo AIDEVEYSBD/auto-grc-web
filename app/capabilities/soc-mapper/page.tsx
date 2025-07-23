@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import {
   ChartBarIcon,
   CloudArrowUpIcon,
@@ -10,6 +10,7 @@ import {
   ExclamationCircleIcon,
   ArrowDownTrayIcon,
   XMarkIcon,
+  StopIcon,
 } from "@heroicons/react/24/outline"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -87,6 +88,8 @@ export default function SocMapperPage() {
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [excelData, setExcelData] = useState<ExcelData | null>(null)
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
 
   const convertResultToExcel = useCallback((result: ProcessingResult): ExcelData => {
     const sheets: ExcelSheet[] = []
@@ -200,92 +203,163 @@ export default function SocMapperPage() {
     }
   }
 
-  // Replace the uploadFile function in your React component with this version
+  const startPolling = (jobId: string) => {
+    const pollJobStatus = async () => {
+      try {
+        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`)
+        
+        if (!statusResponse.ok) {
+          throw new Error("Failed to get job status")
+        }
 
-const uploadFile = async () => {
-  if (!file) return
+        const statusData = await statusResponse.json()
+        
+        // Update progress based on job status
+        setProcessingStatus(prev => ({
+          ...prev,
+          progress: statusData.progress || prev.progress,
+          status: statusData.status === "completed" ? "completed" : 
+                  statusData.status === "failed" ? "failed" : "processing"
+        }))
 
-  setProcessingStatus({
-    status: "uploading",
-    progress: 10,
-    fileName: file.name,
-    startTime: Date.now()
-  })
+        if (statusData.status === "completed") {
+          // Job completed successfully
+          if (pollingInterval) {
+            clearInterval(pollingInterval)
+            setPollingInterval(null)
+          }
 
-  const formData = new FormData()
-  formData.append("file", file)
+          setProcessingStatus(prev => ({
+            ...prev,
+            status: "completed",
+            progress: 100,
+            completedAt: Date.now()
+          }))
 
-  try {
-    // Simulate progress during upload
-    setProcessingStatus(prev => ({ ...prev, status: "processing", progress: 30 }))
+          // Set the result
+          setProcessingResult(statusData.result)
+          
+          // Convert result to Excel format
+          const excelData = convertResultToExcel(statusData.result)
+          setExcelData(excelData)
+          
+          setFile(null)
+          setCurrentJobId(null)
+          
+          if (statusData.result.rag_results.status === "completed") {
+            toast.success("SOC mapping completed successfully!")
+          } else {
+            toast.warning(`Processing completed but RAG matching: ${statusData.result.rag_results.status}`)
+          }
 
-    // Create AbortController for manual cancellation if needed
-    const controller = new AbortController()
-    
-    const response = await fetch(`${API_BASE_URL}/upload-soc-report`, {
-      method: "POST",
-      body: formData,
-      signal: controller.signal,
-      // Set a very long timeout - 3 hours (10800000 ms)
-      // Note: This may still be limited by browser/proxy timeouts
-      timeout: 10800000,
-      headers: {
-        // Add keep-alive header to help maintain connection
-        'Connection': 'keep-alive'
+          // Clean up the job on the server
+          try {
+            await fetch(`${API_BASE_URL}/job/${jobId}`, { method: "DELETE" })
+          } catch (cleanupError) {
+            console.warn("Failed to cleanup job:", cleanupError)
+          }
+
+        } else if (statusData.status === "failed") {
+          // Job failed
+          if (pollingInterval) {
+            clearInterval(pollingInterval)
+            setPollingInterval(null)
+          }
+
+          setProcessingStatus(prev => ({
+            ...prev,
+            status: "failed",
+            error: statusData.error || "Processing failed"
+          }))
+
+          setCurrentJobId(null)
+          toast.error("SOC report processing failed")
+        }
+        
+        // If still processing, continue polling (interval will handle the next call)
+
+      } catch (pollError) {
+        console.error("Polling error:", pollError)
+        
+        // Don't stop polling on network errors, just log them
+        // The interval will retry automatically
       }
+    }
+
+    // Start immediate poll
+    pollJobStatus()
+
+    // Set up interval polling every 5 seconds
+    const interval = setInterval(pollJobStatus, 5000)
+    setPollingInterval(interval)
+  }
+
+  const uploadFile = async () => {
+    if (!file) return
+
+    setProcessingStatus({
+      status: "uploading",
+      progress: 10,
+      fileName: file.name,
+      startTime: Date.now()
     })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: "Upload failed" }))
-      throw new Error(errorData.detail || "Upload failed")
-    }
+    const formData = new FormData()
+    formData.append("file", file)
 
-    setProcessingStatus(prev => ({ ...prev, progress: 70 }))
+    try {
+      // Start the processing job
+      const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
+        method: "POST",
+        body: formData,
+      })
 
-    const result: ProcessingResult = await response.json()
-    
-    setProcessingStatus(prev => ({ 
-      ...prev, 
-      status: "completed", 
-      progress: 100,
-      completedAt: Date.now()
-    }))
+      if (!startResponse.ok) {
+        const errorData = await startResponse.json().catch(() => ({ detail: "Failed to start processing" }))
+        throw new Error(errorData.detail || "Failed to start processing")
+      }
 
-    setProcessingResult(result)
-    
-    // Convert result to Excel format
-    const excelData = convertResultToExcel(result)
-    setExcelData(excelData)
-    
-    setFile(null)
-    
-    if (result.rag_results.status === "completed") {
-      toast.success("SOC mapping completed successfully!")
-    } else {
-      toast.warning(`Processing completed but RAG matching: ${result.rag_results.status}`)
-    }
+      const startResult = await startResponse.json()
+      const jobId = startResult.job_id
+      setCurrentJobId(jobId)
 
-  } catch (error) {
-    console.error("Upload error:", error)
-    
-    // Check if it's a timeout error specifically
-    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('timeout'))) {
-      setProcessingStatus(prev => ({
-        ...prev,
-        status: "failed",
-        error: "Request timed out. The process may still be running on the server. Please try checking back later or contact support."
+      setProcessingStatus(prev => ({ 
+        ...prev, 
+        status: "processing", 
+        progress: 20 
       }))
-      toast.error("Request timed out - process may still be running on server")
-    } else {
+
+      // Start polling for job status
+      startPolling(jobId)
+
+    } catch (error) {
+      console.error("Upload error:", error)
       setProcessingStatus(prev => ({
         ...prev,
         status: "failed",
         error: error instanceof Error ? error.message : "Upload failed"
       }))
-      toast.error("Failed to upload SOC report")
+      toast.error("Failed to start SOC report processing")
     }
   }
-}
+
+  const cancelProcessing = async () => {
+    if (currentJobId && pollingInterval) {
+      clearInterval(pollingInterval)
+      setPollingInterval(null)
+      
+      try {
+        // Clean up the job on the server
+        await fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" })
+      } catch (error) {
+        console.warn("Failed to cancel job:", error)
+      }
+      
+      setCurrentJobId(null)
+      setProcessingStatus({ status: "idle", progress: 0 })
+      toast.info("Processing cancelled")
+    }
+  }
 
   const downloadExcel = () => {
     if (!excelData) return
@@ -303,11 +377,33 @@ const uploadFile = async () => {
   }
 
   const resetProcessing = () => {
+    // Clean up polling if active
+    if (pollingInterval) {
+      clearInterval(pollingInterval)
+      setPollingInterval(null)
+    }
+    
+    // Clean up job if exists
+    if (currentJobId) {
+      fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" }).catch(console.warn)
+      setCurrentJobId(null)
+    }
+    
     setProcessingStatus({ status: "idle", progress: 0 })
     setProcessingResult(null)
     setExcelData(null)
     setShowResultModal(false)
   }
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup polling interval on component unmount
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
+      }
+    }
+  }, [pollingInterval])
 
   const getStatusIcon = () => {
     switch (processingStatus.status) {
@@ -326,7 +422,7 @@ const uploadFile = async () => {
   const getStatusText = () => {
     switch (processingStatus.status) {
       case "uploading":
-        return "Uploading SOC report..."
+        return "Starting SOC report processing..."
       case "processing":
         return "Processing and mapping controls..."
       case "completed":
@@ -487,11 +583,30 @@ const uploadFile = async () => {
             )}
 
             {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                <p>• Extracting controls from SOC report (pages 36-81)</p>
-                <p>• Generating regex patterns for chunking</p>
-                <p>• Running RAG matching against CIS framework</p>
-                <p>• Processing completed synchronously</p>
+              <div className="space-y-4">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  <p>• Extracting controls from SOC report (pages 36-81)</p>
+                  <p>• Generating regex patterns for chunking</p>
+                  <p>• Running RAG matching against CIS framework</p>
+                  <p>• Processing running in background - safe to wait</p>
+                </div>
+                
+                <div className="flex gap-3">
+                  <Button variant="outline" size="sm" onClick={cancelProcessing}>
+                    <StopIcon className="h-4 w-4 mr-2" />
+                    Cancel Processing
+                  </Button>
+                </div>
+                
+                <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <p className="font-medium mb-1">Long process notice:</p>
+                  <p>This process can take up to 2 hours depending on document size and complexity. 
+                  The system polls the server every 5 seconds for updates. You can safely close this 
+                  window and return later - the process will continue running on the server.</p>
+                  {currentJobId && (
+                    <p className="mt-1">Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code></p>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>
