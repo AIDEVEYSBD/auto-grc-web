@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
@@ -26,25 +26,8 @@ const navigation = [
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
-  const [isHovered, setIsHovered] = useState(false)
   const pathname = usePathname()
-
-  // Auto-hide functionality
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const sidebarWidth = collapsed ? 64 : 256
-      if (e.clientX <= 20 && collapsed) {
-        setIsHovered(true)
-      } else if (e.clientX > sidebarWidth + 20) {
-        setIsHovered(false)
-      }
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-    return () => document.removeEventListener("mousemove", handleMouseMove)
-  }, [collapsed])
-
-  const shouldExpand = !collapsed || isHovered
+  const shouldExpand = !collapsed
 
   return (
     <div
@@ -53,8 +36,6 @@ export default function Sidebar() {
         ${shouldExpand ? "w-64" : "w-16"}
         lg:relative lg:translate-x-0
       `}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       <div className="flex h-full flex-col">
         {/* Header with Logo and Collapse Button */}
