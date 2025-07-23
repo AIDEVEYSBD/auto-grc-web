@@ -549,7 +549,7 @@ export default function SocMapperPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ChartBarIcon className="h-5 w-5" />
+              <ChartBarIcon className="h-5 w-5 text-green-700 text-green-700 text-green-700 text-yellow-400 text-zinc-950 text-white text-black text-emerald-300 text-emerald-300 text-green-900 text-green-600 text-lime-700 text-amber-950 text-zinc-500 text-slate-400" />
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
