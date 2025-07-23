@@ -63,6 +63,27 @@ interface ProcessingResult {
     source_framework: string
     top_k: number
   }
+  llm_analysis: {
+    status: string
+    enhanced_matches_count: number
+    enhanced_matches: Array<{
+      source_id: string
+      source_text: string
+      target_id: string
+      target_text: string
+      rag_rank: number
+      rag_similarity_score: number
+      equivalence_type: string
+      confidence_score: number
+      mapping_justification: string
+      overlapping_concepts: string
+      distinct_concepts: string
+      conceptual_strength: string
+      llm_audit_notes: string
+    }>
+    model_used: string
+    analysis_type: string
+  }
 }
 
 interface ExcelSheet {
@@ -94,7 +115,38 @@ export default function SocMapperPage() {
   const convertResultToExcel = useCallback((result: ProcessingResult): ExcelData => {
     const sheets: ExcelSheet[] = []
 
-    // Sheet 1: RAG Mapping Results
+    // Sheet 1: LLM Enhanced Analysis Results (Primary Results)
+    if (result.llm_analysis.enhanced_matches && result.llm_analysis.enhanced_matches.length > 0) {
+      const enhancedData = [
+        ["RAG Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text", 
+         "Equivalence Type", "Confidence Score", "Mapping Justification", "Overlapping Concepts", 
+         "Distinct Concepts", "Conceptual Strength", "LLM Audit Notes"]
+      ]
+      
+      result.llm_analysis.enhanced_matches.forEach(match => {
+        enhancedData.push([
+          match.rag_rank,
+          match.source_id,
+          match.source_text.substring(0, 200) + (match.source_text.length > 200 ? "..." : ""),
+          match.target_id,
+          match.target_text.substring(0, 200) + (match.target_text.length > 200 ? "..." : ""),
+          match.equivalence_type,
+          match.confidence_score,
+          match.mapping_justification,
+          match.overlapping_concepts,
+          match.distinct_concepts,
+          match.conceptual_strength,
+          match.llm_audit_notes
+        ])
+      })
+
+      sheets.push({
+        name: "LLM Enhanced Analysis",
+        data: enhancedData
+      })
+    }
+
+    // Sheet 2: RAG Mapping Results (Original RAG Results)
     if (result.rag_results.matches && result.rag_results.matches.length > 0) {
       const mappingData = [
         ["Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text"]
@@ -116,7 +168,7 @@ export default function SocMapperPage() {
       })
     }
 
-    // Sheet 2: Extracted SOC Controls
+    // Sheet 3: Extracted SOC Controls
     if (result.parser_results.text_chunks && result.parser_results.text_chunks.length > 0) {
       const chunksData = [
         ["Control ID", "Control Content"]
@@ -135,7 +187,7 @@ export default function SocMapperPage() {
       })
     }
 
-    // Sheet 3: Processing Summary
+    // Sheet 4: Processing Summary
     const summaryData = [
       ["Metric", "Value"],
       ["Filename", result.filename],
@@ -145,7 +197,10 @@ export default function SocMapperPage() {
       ["Text Chunks Found", result.parser_results.text_chunks_count],
       ["Tables Found", result.parser_results.tables_count],
       ["RAG Status", result.rag_results.status],
-      ["Total Matches", result.rag_results.matches_count],
+      ["RAG Matches", result.rag_results.matches_count],
+      ["LLM Analysis Status", result.llm_analysis.status],
+      ["LLM Enhanced Matches", result.llm_analysis.enhanced_matches_count],
+      ["LLM Model Used", result.llm_analysis.model_used || "N/A"],
       ["Source Framework", result.rag_results.source_framework || "N/A"],
       ["Top K Matches", result.rag_results.top_k || "N/A"]
     ]
@@ -157,7 +212,7 @@ export default function SocMapperPage() {
 
     return {
       sheets,
-      fileName: result.filename.replace(".pdf", "_soc_mapping.xlsx")
+      fileName: result.filename.replace(".pdf", "_enhanced_soc_mapping.xlsx")
     }
   }, [])
 
@@ -204,15 +259,24 @@ export default function SocMapperPage() {
   }
 
   const startPolling = (jobId: string) => {
+    let consecutiveErrors = 0
+    const maxConsecutiveErrors = 3
+    
     const pollJobStatus = async () => {
       try {
         const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`)
         
         if (!statusResponse.ok) {
-          throw new Error("Failed to get job status")
+          if (statusResponse.status === 404) {
+            throw new Error("Job not found on server")
+          }
+          throw new Error(`HTTP ${statusResponse.status}: ${statusResponse.statusText}`)
         }
 
         const statusData = await statusResponse.json()
+        
+        // Reset error counter on successful response
+        consecutiveErrors = 0
         
         // Update progress based on job status
         setProcessingStatus(prev => ({
@@ -246,8 +310,10 @@ export default function SocMapperPage() {
           setFile(null)
           setCurrentJobId(null)
           
-          if (statusData.result.rag_results.status === "completed") {
-            toast.success("SOC mapping completed successfully!")
+          if (statusData.result.rag_results.status === "completed" && statusData.result.llm_analysis.status === "completed") {
+            toast.success("SOC mapping and LLM analysis completed successfully!")
+          } else if (statusData.result.rag_results.status === "completed") {
+            toast.warning(`RAG mapping completed but LLM analysis: ${statusData.result.llm_analysis.status}`)
           } else {
             toast.warning(`Processing completed but RAG matching: ${statusData.result.rag_results.status}`)
           }
@@ -273,15 +339,33 @@ export default function SocMapperPage() {
           }))
 
           setCurrentJobId(null)
-          toast.error("SOC report processing failed")
+          toast.error(`SOC report processing failed: ${statusData.error || "Unknown error"}`)
         }
         
         // If still processing, continue polling (interval will handle the next call)
 
       } catch (pollError) {
         console.error("Polling error:", pollError)
+        consecutiveErrors++
         
-        // Don't stop polling on network errors, just log them
+        // If we have too many consecutive errors, stop polling and show error
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          if (pollingInterval) {
+            clearInterval(pollingInterval)
+            setPollingInterval(null)
+          }
+          
+          setProcessingStatus(prev => ({
+            ...prev,
+            status: "failed",
+            error: `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`
+          }))
+          
+          setCurrentJobId(null)
+          toast.error("Lost connection to server. Please check your connection and try again.")
+        }
+        
+        // Don't stop polling on network errors unless we've had too many
         // The interval will retry automatically
       }
     }
@@ -315,11 +399,24 @@ export default function SocMapperPage() {
       })
 
       if (!startResponse.ok) {
-        const errorData = await startResponse.json().catch(() => ({ detail: "Failed to start processing" }))
-        throw new Error(errorData.detail || "Failed to start processing")
+        let errorMessage = "Failed to start processing"
+        try {
+          const errorData = await startResponse.json()
+          errorMessage = errorData.detail || errorMessage
+        } catch {
+          // If we can't parse the error response, use the status text
+          errorMessage = `HTTP ${startResponse.status}: ${startResponse.statusText}`
+        }
+        throw new Error(errorMessage)
       }
 
       const startResult = await startResponse.json()
+      
+      // Validate that we got a job ID
+      if (!startResult.job_id) {
+        throw new Error("Server did not return a job ID")
+      }
+      
       const jobId = startResult.job_id
       setCurrentJobId(jobId)
 
@@ -339,7 +436,7 @@ export default function SocMapperPage() {
         status: "failed",
         error: error instanceof Error ? error.message : "Upload failed"
       }))
-      toast.error("Failed to start SOC report processing")
+      toast.error(error instanceof Error ? error.message : "Failed to start SOC report processing")
     }
   }
 
@@ -445,7 +542,7 @@ export default function SocMapperPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">SOC Mapper</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Map SOC2 Type2 reports against CIS framework</p>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">Map SOC2 Type2 reports against CIS framework with enhanced LLM analysis</p>
       </div>
 
       {processingStatus.status === "idle" ? (
@@ -456,7 +553,7 @@ export default function SocMapperPage() {
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
-              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework
+              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework with enhanced LLM analysis for conceptual overlap assessment
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -548,9 +645,9 @@ export default function SocMapperPage() {
                     </p>
                   </div>
                   <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg">
-                    <p className="font-medium text-purple-900 dark:text-purple-100">Tables Found</p>
+                    <p className="font-medium text-purple-900 dark:text-purple-100">LLM Enhanced</p>
                     <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                      {processingResult.parser_results.tables_count}
+                      {processingResult.llm_analysis.enhanced_matches_count}
                     </p>
                   </div>
                   <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
@@ -588,6 +685,7 @@ export default function SocMapperPage() {
                   <p>• Extracting controls from SOC report (pages 36-81)</p>
                   <p>• Generating regex patterns for chunking</p>
                   <p>• Running RAG matching against CIS framework</p>
+                  <p>• Enhancing with LLM conceptual overlap analysis</p>
                   <p>• Processing running in background - safe to wait</p>
                 </div>
                 
@@ -599,8 +697,8 @@ export default function SocMapperPage() {
                 </div>
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <p className="font-medium mb-1">Long process notice:</p>
-                  <p>This process can take up to 2 hours depending on document size and complexity. 
+                  <p className="font-medium mb-1">Enhanced analysis process:</p>
+                  <p>This process includes both RAG matching and LLM conceptual overlap analysis, which can take up to 2 hours depending on document size and complexity. 
                   The system polls the server every 5 seconds for updates. You can safely close this 
                   window and return later - the process will continue running on the server.</p>
                   {currentJobId && (
