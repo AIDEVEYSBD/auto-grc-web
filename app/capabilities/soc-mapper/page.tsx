@@ -391,8 +391,8 @@ export default function SocMapperPage() {
     // Start immediate poll
     pollJobStatus()
 
-    // Set up interval polling every 8 seconds (increased from 5 to reduce server load)
-    const interval = setInterval(pollJobStatus, 8000)
+    // Set up interval polling every 5 seconds (reduced from 8)
+    const interval = setInterval(pollJobStatus, 5000)
     setPollingInterval(interval)
   }
 
@@ -771,14 +771,6 @@ export default function SocMapperPage() {
 
             {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
               <div className="space-y-4">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  <p>• <strong>Text Extraction</strong> (5%): Extracting controls from SOC report (pages 36-81)</p>
-                  <p>• <strong>RAG Matching</strong> (30%): Finding matches against CIS framework (up to 10 min)</p>
-                  <p>• <strong>LLM Analysis</strong> (95%): Intelligent conceptual overlap analysis (up to 30 min)</p>
-                  <p>• <strong>Report Generation</strong> (100%): Creating final compliance report</p>
-                  <p className="mt-2 font-medium">Your processing continues safely on the server even if connection is lost.</p>
-                </div>
-                
                 <div className="flex gap-3">
                   <Button variant="outline" size="sm" onClick={cancelProcessing}>
                     <StopIcon className="h-4 w-4 mr-2" />
@@ -788,7 +780,7 @@ export default function SocMapperPage() {
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <p className="font-medium mb-1">Processing Information:</p>
-                  <p>Total time can take up to 40+ minutes for complex documents. The system polls every 8 seconds for updates. 
+                  <p>Total time can take up to 40+ minutes for complex documents. The system polls every 5 seconds for updates. 
                   If you see connection timeouts, don't worry - your job continues running on the server. You can safely close this 
                   window and return later to check progress.</p>
                   {currentJobId && (
