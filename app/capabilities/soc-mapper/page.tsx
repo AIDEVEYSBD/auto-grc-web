@@ -308,7 +308,7 @@ export default function SocMapperPage() {
           setExcelData(excelData)
           
           setFile(null)
-          setCurrentJobId(null)
+          // Don't clear currentJobId here - we need it for downloading
           
           if (statusData.result.rag_results.status === "completed" && statusData.result.llm_analysis.status === "completed") {
             toast.success("SOC mapping and LLM analysis completed successfully!")
@@ -316,13 +316,6 @@ export default function SocMapperPage() {
             toast.warning(`RAG mapping completed but LLM analysis: ${statusData.result.llm_analysis.status}`)
           } else {
             toast.warning(`Processing completed but RAG matching: ${statusData.result.rag_results.status}`)
-          }
-
-          // Clean up the job on the server
-          try {
-            await fetch(`${API_BASE_URL}/job/${jobId}`, { method: "DELETE" })
-          } catch (cleanupError) {
-            console.warn("Failed to cleanup job:", cleanupError)
           }
 
         } else if (statusData.status === "failed") {
@@ -458,19 +451,59 @@ export default function SocMapperPage() {
     }
   }
 
-  const downloadExcel = () => {
-    if (!excelData) return
+  const downloadExcel = async () => {
+    if (!currentJobId) {
+      toast.error("No job ID available for download")
+      return
+    }
 
-    // Create workbook
-    const workbook = XLSX.utils.book_new()
-    
-    excelData.sheets.forEach(sheet => {
-      const worksheet = XLSX.utils.aoa_to_sheet(sheet.data)
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name)
-    })
-
-    // Download
-    XLSX.writeFile(workbook, excelData.fileName)
+    try {
+      // Download the server-generated Excel report
+      const response = await fetch(`${API_BASE_URL}/download-report/${currentJobId}`)
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`)
+      }
+      
+      // Get the filename from the response headers or use a default
+      const contentDisposition = response.headers.get('content-disposition')
+      let filename = 'soc_compliance_report.xlsx'
+      
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '')
+        }
+      }
+      
+      // Create blob and download
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      toast.success("Report downloaded successfully!")
+      
+    } catch (error) {
+      console.error('Download error:', error)
+      toast.error(`Failed to download report: ${error.message}`)
+      
+      // Fallback to client-side Excel generation if server download fails
+      if (excelData) {
+        const workbook = XLSX.utils.book_new()
+        excelData.sheets.forEach(sheet => {
+          const worksheet = XLSX.utils.aoa_to_sheet(sheet.data)
+          XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name)
+        })
+        XLSX.writeFile(workbook, excelData.fileName)
+        toast.info("Downloaded client-generated Excel as fallback")
+      }
+    }
   }
 
   const resetProcessing = () => {
@@ -662,7 +695,7 @@ export default function SocMapperPage() {
                   <Button onClick={() => setShowResultModal(true)}>View Results</Button>
                   <Button variant="outline" onClick={downloadExcel}>
                     <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                    Download Excel
+                    Download Report
                   </Button>
                   <Button variant="outline" onClick={resetProcessing}>
                     Start New Mapping
@@ -686,6 +719,7 @@ export default function SocMapperPage() {
                   <p>• Generating regex patterns for chunking</p>
                   <p>• Running RAG matching against CIS framework</p>
                   <p>• Enhancing with LLM conceptual overlap analysis</p>
+                  <p>• Generating final compliance report</p>
                   <p>• Processing running in background - safe to wait</p>
                 </div>
                 
@@ -698,7 +732,7 @@ export default function SocMapperPage() {
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <p className="font-medium mb-1">Enhanced analysis process:</p>
-                  <p>This process includes both RAG matching and LLM conceptual overlap analysis, which can take up to 2 hours depending on document size and complexity. 
+                  <p>This process includes RAG matching, LLM conceptual overlap analysis, and final report generation, which can take up to 1 hour depending on document size and complexity. 
                   The system polls the server every 5 seconds for updates. You can safely close this 
                   window and return later - the process will continue running on the server.</p>
                   {currentJobId && (
@@ -720,7 +754,7 @@ export default function SocMapperPage() {
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={downloadExcel}>
                   <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                  Download
+                  Download Report
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowResultModal(false)}>
                   <XMarkIcon className="h-4 w-4" />
