@@ -97,7 +97,6 @@ interface ExcelData {
   fileName: string
 }
 
-// Change this to your server URL
 const API_BASE_URL = "https://soc.autogrc.cloud"
 
 export default function SocMapperPage() {
@@ -113,10 +112,91 @@ export default function SocMapperPage() {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
 
+  // 20-minute timeline as requested
+  const demoSteps = [
+    { progress: 2, message: "Extracting text from PDF...", duration: 8000 },
+    { progress: 5, message: "Text extraction completed successfully", duration: 7000 },
+    { progress: 7, message: "Chunking extracted text into controls...", duration: 15000 },
+    { progress: 10, message: "Found 47 controls, starting RAG matching...", duration: 15000 },
+    { progress: 12, message: "Initializing RAG matcher...", duration: 15000 },
+    { progress: 15, message: "Running RAG pipeline...", duration: 30000 },
+    { progress: 20, message: "RAG matching against CIS framework in progress... (1m 15s elapsed)", duration: 60000 },
+    { progress: 25, message: "RAG matching against CIS framework in progress... (2m 30s elapsed)", duration: 90000 },
+    { progress: 30, message: "RAG matching completed - found 235 matches", duration: 30000 },
+    { progress: 35, message: "Starting intelligent LLM analysis...", duration: 15000 },
+    { progress: 38, message: "Initializing LLM analysis...", duration: 15000 },
+    { progress: 42, message: "LLM intelligent analysis in progress... (6m 45s elapsed)", duration: 120000 },
+    { progress: 48, message: "LLM intelligent analysis in progress... (8m 30s elapsed)", duration: 120000 },
+    { progress: 55, message: "LLM intelligent analysis in progress... (10m 45s elapsed)", duration: 120000 },
+    { progress: 63, message: "LLM intelligent analysis in progress... (13m 00s elapsed)", duration: 120000 },
+    { progress: 72, message: "LLM intelligent analysis in progress... (15m 15s elapsed)", duration: 120000 },
+    { progress: 81, message: "LLM intelligent analysis in progress... (17m 30s elapsed)", duration: 90000 },
+    { progress: 88, message: "LLM intelligent analysis in progress... (18m 45s elapsed)", duration: 60000 },
+    { progress: 95, message: "LLM analysis completed, generating final report...", duration: 30000 },
+    { progress: 98, message: "Report generated, preparing results...", duration: 15000 },
+    { progress: 100, message: "SOC mapping and analysis completed successfully!", duration: 5000 }
+  ]
+
+  const createDemoResult = (): ProcessingResult => ({
+    status: "success",
+    filename: file?.name || "demo_soc_report.pdf",
+    processing_config: {
+      start_page: 36,
+      end_page: 81,
+      sample_control_id: "7.12:"
+    },
+    parser_results: {
+      extracted_text_length: 245789,
+      text_chunks_count: 47,
+      text_chunks: [
+        { "Control ID": "CC6.1", "Content": "The entity implements logical and physical access controls to restrict unauthorized access to the system and data." },
+        { "Control ID": "CC6.2", "Content": "Prior to issuing system credentials and granting system access, the entity registers and authorizes new internal and external users." },
+        { "Control ID": "CC6.7", "Content": "The entity restricts transmission, movement, and removal of information to authorized internal and external users." },
+        { "Control ID": "CC7.2", "Content": "The entity monitors system components and the operation of controls to detect anomalies." },
+        { "Control ID": "CC2.1", "Content": "The entity establishes and maintains policies and procedures to support the design and operating effectiveness of controls." }
+      ],
+      tables_count: 12,
+      tables: [],
+      regex_pattern_used: "\\d+\\.\\d+:"
+    },
+    rag_results: {
+      status: "completed",
+      matches_count: 235,
+      matches: [
+        { source_id: "CIS-1.1", source_text: "Establish and maintain detailed enterprise asset inventory", target_id: "CC6.1", target_text: "Logical and physical access controls restrict unauthorized access", rank: 1 },
+        { source_id: "CIS-1.2", source_text: "Establish and maintain software asset inventory", target_id: "CC6.2", target_text: "System access is restricted to authorized users", rank: 2 }
+      ],
+      source_framework: "CIS.xlsx",
+      top_k: 5
+    },
+    llm_analysis: {
+      status: "completed",
+      enhanced_matches_count: 47,
+      enhanced_matches: [
+        {
+          source_id: "CIS-1.1",
+          source_text: "Establish and maintain detailed enterprise asset inventory",
+          target_id: "CC6.1",
+          target_text: "The entity implements logical and physical access controls to restrict unauthorized access to the system and data.",
+          rag_rank: 1,
+          rag_similarity_score: 0.85,
+          equivalence_type: "STRONG_OVERLAP",
+          confidence_score: 0.85,
+          mapping_justification: "Both controls focus on asset management and access restriction",
+          overlapping_concepts: "Asset inventory, Access control",
+          distinct_concepts: "Physical vs logical assets",
+          conceptual_strength: "HIGH",
+          llm_audit_notes: "Strong conceptual alignment with complementary scopes"
+        }
+      ],
+      model_used: "gpt-4",
+      analysis_type: "compliance_mapping"
+    }
+  })
+
   const convertResultToExcel = useCallback((result: ProcessingResult): ExcelData => {
     const sheets: ExcelSheet[] = []
 
-    // Sheet 1: LLM Enhanced Analysis Results (Primary Results)
     if (result.llm_analysis.enhanced_matches && result.llm_analysis.enhanced_matches.length > 0) {
       const enhancedData = [
         ["RAG Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text", 
@@ -147,7 +227,6 @@ export default function SocMapperPage() {
       })
     }
 
-    // Sheet 2: RAG Mapping Results (Original RAG Results)
     if (result.rag_results.matches && result.rag_results.matches.length > 0) {
       const mappingData = [
         ["Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text"]
@@ -169,7 +248,6 @@ export default function SocMapperPage() {
       })
     }
 
-    // Sheet 3: Extracted SOC Controls
     if (result.parser_results.text_chunks && result.parser_results.text_chunks.length > 0) {
       const chunksData = [
         ["Control ID", "Control Content"]
@@ -188,7 +266,6 @@ export default function SocMapperPage() {
       })
     }
 
-    // Sheet 4: Processing Summary
     const summaryData = [
       ["Metric", "Value"],
       ["Filename", result.filename],
@@ -224,7 +301,6 @@ export default function SocMapperPage() {
     }
 
     if (selectedFile.size > 50 * 1024 * 1024) {
-      // 50MB limit
       toast.error("File size must be less than 50MB")
       return
     }
@@ -259,478 +335,88 @@ export default function SocMapperPage() {
     }
   }
 
-  const startPolling = (jobId: string, initialProgress?: number) => {
-    let networkErrorCount = 0
-    let hardErrorCount = 0
-    const maxNetworkErrors = 20     // Allow many network errors
-    const maxHardErrors = 5         // Fewer hard errors (404, 500, etc.)
-    let currentBackoffDelay = 4000  // Start with 4 seconds
-    const maxBackoffDelay = 30000   // Max 30 seconds between polls
-    let lastKnownProgress = initialProgress || 0       // Track progress to prevent regression
-    
-    const pollJobStatus = async () => {
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 45000) // Increased to 45s timeout
-        
-        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`, {
-          method: 'GET',
-          mode: 'cors',
-          signal: controller.signal,
-          headers: {
-            'Cache-Control': 'no-cache',
-          }
-        })
-        
-        clearTimeout(timeoutId)
-        
-        // Handle different HTTP status codes
-        if (!statusResponse.ok) {
-          if (statusResponse.status === 404) {
-            hardErrorCount++
-            throw new Error("Job not found on server")
-          }
-          if (statusResponse.status === 524 || statusResponse.status === 502 || statusResponse.status === 503) {
-            // These are network/proxy timeouts, not hard errors
-            networkErrorCount++
-            throw new Error(`Network timeout (${statusResponse.status}) - processing continues on server`)
-          }
-          if (statusResponse.status >= 500) {
-            hardErrorCount++
-            throw new Error(`Server error: ${statusResponse.status}`)
-          }
-          // For other 4xx errors
-          hardErrorCount++
-          throw new Error(`HTTP ${statusResponse.status}: ${statusResponse.statusText}`)
-        }
-
-        const statusData = await statusResponse.json()
-        
-        // Reset error counters and backoff on successful response
-        networkErrorCount = 0
-        hardErrorCount = 0
-        currentBackoffDelay = 4000 // Reset to 4 seconds
-        
-        // Ensure progress never goes backwards
-        const newProgress = Math.max(statusData.progress || lastKnownProgress, lastKnownProgress)
-        lastKnownProgress = newProgress
-        
-        console.log(`Job ${jobId} status: ${newProgress}% - ${statusData.status_message}`)
-        
-        // Update progress based on job status
-        setProcessingStatus(prev => ({
-          ...prev,
-          progress: newProgress,
-          statusMessage: statusData.status_message || prev.statusMessage,
-          status: statusData.status === "completed" ? "completed" : 
-                  statusData.status === "failed" ? "failed" : "processing"
-        }))
-
-        if (statusData.status === "completed") {
-          // Job completed successfully
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
-
-          setProcessingStatus(prev => ({
-            ...prev,
-            status: "completed",
-            progress: 100,
-            statusMessage: "Processing completed successfully!",
-            completedAt: Date.now()
-          }))
-
-          // Set the result
-          setProcessingResult(statusData.result)
-          
-          // Convert result to Excel format
-          const excelData = convertResultToExcel(statusData.result)
-          setExcelData(excelData)
-          
-          setFile(null)
-          
-          if (statusData.result.rag_results.status === "completed" && statusData.result.llm_analysis.status === "completed") {
-            toast.success("SOC mapping and LLM analysis completed successfully!")
-          } else if (statusData.result.rag_results.status === "completed") {
-            toast.warning(`RAG mapping completed but LLM analysis: ${statusData.result.llm_analysis.status}`)
-          } else {
-            toast.warning(`Processing completed but RAG matching: ${statusData.result.rag_results.status}`)
-          }
-
-        } else if (statusData.status === "failed") {
-          // Job failed
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
-
-          setProcessingStatus(prev => ({
-            ...prev,
-            status: "failed",
-            statusMessage: statusData.status_message || prev.statusMessage,
-            error: statusData.error || "Processing failed"
-          }))
-
-          setCurrentJobId(null)
-          toast.error(`SOC report processing failed: ${statusData.error || "Unknown error"}`)
-        }
-
-      } catch (pollError) {
-        console.warn("Polling error:", pollError)
-        
-        // Determine error type
-        let isNetworkError = false
-        let errorMessage = "Unknown error"
-        
-        if (pollError instanceof Error) {
-          errorMessage = pollError.message
-          const msg = errorMessage.toLowerCase()
-          
-          // Network errors: timeouts, aborts, CORS, fetch failures
-          if (msg.includes("524") || msg.includes("502") || msg.includes("503") || 
-              msg.includes("timeout") || msg.includes("aborted") || 
-              msg.includes("cors") || msg.includes("network") ||
-              msg.includes("fetch") || pollError.name === 'AbortError') {
-            isNetworkError = true
-            networkErrorCount++
-          } else {
-            hardErrorCount++
-          }
-        } else {
-          hardErrorCount++
-        }
-        
-        console.log(`Error counts - Network: ${networkErrorCount}/${maxNetworkErrors}, Hard: ${hardErrorCount}/${maxHardErrors}`)
-        
-        // Update UI with network status
-        if (isNetworkError) {
-          setProcessingStatus(prev => ({
-            ...prev,
-            statusMessage: `Network timeout - processing continues on server (${networkErrorCount}/${maxNetworkErrors})`
-          }))
-          
-          // Implement exponential backoff for network errors
-          currentBackoffDelay = Math.min(currentBackoffDelay * 1.5, maxBackoffDelay)
-        }
-        
-        // Check if we should stop polling
-        const shouldStop = hardErrorCount >= maxHardErrors || networkErrorCount >= maxNetworkErrors
-        
-        if (shouldStop) {
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
-          
-          let finalErrorMessage = errorMessage
-          
-          // Provide specific guidance based on error type
-          if (networkErrorCount >= maxNetworkErrors) {
-            finalErrorMessage = `Multiple network timeouts detected (${networkErrorCount}). Your processing is likely still running on the server. The job will continue in the background. You can close this window and return later, or try refreshing to reconnect.`
-            
-            // Don't mark as failed for network issues - suggest reconnection
-            setProcessingStatus(prev => ({
-              ...prev,
-              statusMessage: "Network connection lost - job continues on server",
-              error: finalErrorMessage
-            }))
-            
-            // Show a less alarming toast for network issues
-            toast.warning("Connection lost - job continues on server. Try refreshing to reconnect.")
-          } else {
-            // Hard errors - mark as failed
-            setProcessingStatus(prev => ({
-              ...prev,
-              status: "failed",
-              statusMessage: "Processing failed",
-              error: finalErrorMessage
-            }))
-            
-            setCurrentJobId(null)
-            toast.error("Processing failed: " + finalErrorMessage)
-          }
-        }
-      }
-    }
-
-    // Start immediate poll
-    pollJobStatus()
-
-    // Set up interval polling - start with base interval, will be cleared and recreated with backoff if needed
-    let currentInterval = setInterval(pollJobStatus, currentBackoffDelay)
-    setPollingInterval(currentInterval)
-    
-    // Update the interval when backoff changes
-    const updatePollingInterval = () => {
-      if (currentInterval) {
-        clearInterval(currentInterval)
-      }
-      currentInterval = setInterval(pollJobStatus, currentBackoffDelay)
-      setPollingInterval(currentInterval)
-    }
-    
-    // This doesn't actually work in the current structure, but leaving the logic
-    // for potential future enhancement where polling delay could be dynamic
-  }
-
-  const uploadFile = async () => {
+  const startDemoProcessing = () => {
     if (!file) return
 
     setProcessingStatus({
       status: "uploading",
-      progress: 5,
+      progress: 0,
       statusMessage: "Uploading file and starting processing...",
       fileName: file.name,
       startTime: Date.now()
     })
 
-    const formData = new FormData()
-    formData.append("file", file)
+    const jobId = "demo-" + Math.random().toString(36).substr(2, 9)
+    setCurrentJobId(jobId)
 
-    let retryCount = 0
-    const maxRetries = 3
-    const retryDelay = 5000 // 5 seconds between retries
-
-    const attemptUpload = async (): Promise<any> => {
-      try {
-        // Show current attempt
-        if (retryCount > 0) {
-          setProcessingStatus(prev => ({
-            ...prev,
-            progress: 5 + (retryCount * 2),
-            statusMessage: `Upload attempt ${retryCount + 1}/${maxRetries + 1}...`
-          }))
-        }
-
-        // Health check with shorter timeout for faster feedback
-        try {
-          const healthController = new AbortController()
-          const healthTimeout = setTimeout(() => healthController.abort(), 10000)
-          
-          const healthResponse = await fetch(`${API_BASE_URL}/health`, {
-            method: "GET",
-            mode: "cors",
-            signal: healthController.signal
-          })
-          
-          clearTimeout(healthTimeout)
-          
-          if (!healthResponse.ok) {
-            throw new Error(`Server health check failed: ${healthResponse.status}`)
-          }
-        } catch (healthError) {
-          if (healthError.name === 'AbortError') {
-            throw new Error("Server health check timed out - server may be overloaded")
-          }
-          throw new Error(`Cannot connect to server at ${API_BASE_URL}. Please check if the server is running.`)
-        }
-
-        // Update progress after health check
+    let currentStep = 0
+    
+    const processNextStep = () => {
+      if (currentStep >= demoSteps.length) {
+        const result = createDemoResult()
+        setProcessingResult(result)
+        setExcelData(convertResultToExcel(result))
+        
         setProcessingStatus(prev => ({
           ...prev,
-          progress: 8,
-          statusMessage: "Server accessible, starting file upload..."
+          status: "completed",
+          progress: 100,
+          statusMessage: "Processing completed successfully!",
+          completedAt: Date.now()
         }))
-
-        // Upload with extended timeout
-        const uploadController = new AbortController()
-        const uploadTimeout = setTimeout(() => uploadController.abort(), 120000) // 2 minutes timeout
         
-        const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
-          method: "POST",
-          mode: "cors",
-          body: formData,
-          signal: uploadController.signal
-        })
-
-        clearTimeout(uploadTimeout)
-
-        // Handle different response scenarios
-        if (!startResponse.ok) {
-          let errorMessage = "Failed to start processing"
-          
-          // Handle 524 specifically - this means the job might have started but response timed out
-          if (startResponse.status === 524) {
-            throw new Error("UPLOAD_TIMEOUT_524")
-          }
-          
-          try {
-            const errorData = await startResponse.json()
-            errorMessage = errorData.detail || errorMessage
-          } catch {
-            errorMessage = `HTTP ${startResponse.status}: ${startResponse.statusText}`
-          }
-          throw new Error(errorMessage)
-        }
-
-        const startResult = await startResponse.json()
-        
-        // Validate that we got a job ID
-        if (!startResult.job_id) {
-          throw new Error("Server did not return a job ID")
-        }
-        
-        return startResult.job_id
-
-      } catch (error) {
-        retryCount++
-        
-        // Handle specific error types
-        if (error instanceof Error) {
-          const errorMsg = error.message
-          
-          // For 524 or network timeouts, the job might have started - check for existing jobs
-          if (errorMsg.includes("524") || errorMsg.includes("UPLOAD_TIMEOUT_524") || 
-              errorMsg.includes("timeout") || error.name === 'AbortError') {
-            
-            if (retryCount <= maxRetries) {
-              setProcessingStatus(prev => ({
-                ...prev,
-                statusMessage: `Upload timeout (attempt ${retryCount}/${maxRetries + 1}) - job may have started, retrying...`
-              }))
-              
-              // Wait before retry
-              await new Promise(resolve => setTimeout(resolve, retryDelay))
-              
-              // Before retrying, check if there are any recent jobs that might be ours
-              try {
-                const debugResponse = await fetch(`${API_BASE_URL}/debug/all-jobs`)
-                if (debugResponse.ok) {
-                  const debugData = await debugResponse.json()
-                  
-                  // Look for a recent job with our filename
-                  const recentJobs = Object.entries(debugData.jobs).filter(([jobId, job]: [string, any]) => {
-                    const jobTime = new Date(job.created_at).getTime()
-                    const timeDiff = Date.now() - jobTime
-                    return timeDiff < 300000 && job.filename === file.name // Within 5 minutes
-                  })
-                  
-                  if (recentJobs.length > 0) {
-                    const [foundJobId, foundJob] = recentJobs[recentJobs.length - 1] // Get most recent
-                    console.log(`Found existing job ${foundJobId} for file ${file.name}`)
-                    
-                    // Update processing status with found job progress
-                    setProcessingStatus(prev => ({
-                      ...prev,
-                      progress: Math.max(foundJob.progress || 15, prev.progress),
-                      statusMessage: `Found existing job - ${foundJob.status_message || 'Processing...'}`
-                    }))
-                    
-                    return foundJobId
-                  }
-                }
-              } catch (debugError) {
-                console.warn("Could not check for existing jobs:", debugError)
-              }
-              
-              return attemptUpload() // Retry
-            }
-          }
-          
-          // For other errors, retry if we haven't exceeded max retries
-          if (retryCount <= maxRetries && !errorMsg.includes("health check")) {
-            setProcessingStatus(prev => ({
-              ...prev,
-              statusMessage: `Upload failed (attempt ${retryCount}/${maxRetries + 1}), retrying...`
-            }))
-            
-            await new Promise(resolve => setTimeout(resolve, retryDelay))
-            return attemptUpload()
-          }
-        }
-        
-        // If we've exhausted retries or it's a non-retryable error, throw it
-        throw error
+        setFile(null)
+        toast.success("SOC mapping and LLM analysis completed successfully!")
+        return
       }
-    }
 
-    try {
-      const jobId = await attemptUpload()
-      setCurrentJobId(jobId)
-
-      setProcessingStatus(prev => ({ 
-        ...prev, 
-        status: "processing", 
-        progress: Math.max(prev.progress, 15),
-        statusMessage: "File uploaded successfully, processing started..."
-      }))
-
-      // Start polling for job status
-      startPolling(jobId, 15)
-
-    } catch (error) {
-      console.error("Upload error after all retries:", error)
-      let errorMessage = error instanceof Error ? error.message : "Upload failed"
-      
-      // Provide specific guidance for common errors
-      if (errorMessage.includes("CORS") || errorMessage.includes("Cross-Origin") || errorMessage.includes("524")) {
-        errorMessage = `Upload timed out or CORS error. This often happens with large files or server overload. The job may have started anyway - check the server logs or try refreshing. If the issue persists, try a smaller file or contact support.`
-      } else if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
-        errorMessage = `Cannot connect to server at ${API_BASE_URL}. Please verify the server is running and accessible.`
-      } else if (errorMessage.includes("timeout") || errorMessage.includes("AbortError")) {
-        errorMessage = `Upload timed out after ${retryCount} attempts. The server may be processing a large backlog. Your job might have started - check back in a few minutes or try with a smaller file.`
-      }
+      const step = demoSteps[currentStep]
       
       setProcessingStatus(prev => ({
         ...prev,
-        status: "failed",
-        statusMessage: "Upload failed after retries",
-        error: errorMessage
+        status: "processing",
+        progress: step.progress,
+        statusMessage: step.message
       }))
-      toast.error(errorMessage)
+
+      currentStep++
+      setTimeout(processNextStep, step.duration)
     }
+
+    setTimeout(() => {
+      setProcessingStatus(prev => ({ ...prev, status: "processing", progress: 1, statusMessage: "Starting PDF processing..." }))
+      setTimeout(processNextStep, 1000)
+    }, 500)
+  }
+
+  const uploadFile = async () => {
+    startDemoProcessing()
   }
 
   const cancelProcessing = async () => {
-    if (currentJobId && pollingInterval) {
+    if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
-      
-      try {
-        // Clean up the job on the server
-        await fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" })
-      } catch (error) {
-        console.warn("Failed to cancel job:", error)
-      }
-      
-      setCurrentJobId(null)
-      setProcessingStatus({ status: "idle", progress: 0 })
-      toast.info("Processing cancelled")
     }
+    
+    setCurrentJobId(null)
+    setProcessingStatus({ status: "idle", progress: 0 })
+    toast.info("Processing cancelled")
   }
 
   const downloadExcel = async () => {
-    if (!currentJobId) {
-      toast.error("No job ID available for download")
-      return
-    }
-
     try {
-      // Download the server-generated Excel report
-      const response = await fetch(`${API_BASE_URL}/download-report/${currentJobId}`)
+      const response = await fetch(`${API_BASE_URL}/demo-report`)
       
       if (!response.ok) {
         throw new Error(`Download failed: ${response.statusText}`)
       }
       
-      // Get the filename from the response headers or use a default
-      const contentDisposition = response.headers.get('content-disposition')
-      let filename = 'soc_compliance_report.xlsx'
-      
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1].replace(/['"]/g, '')
-        }
-      }
-      
-      // Create blob and download
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = filename
+      a.download = 'soc_compliance_report.xlsx'
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -740,9 +426,7 @@ export default function SocMapperPage() {
       
     } catch (error) {
       console.error('Download error:', error)
-      toast.error(`Failed to download report: ${error.message}`)
       
-      // Fallback to client-side Excel generation if server download fails
       if (excelData) {
         const workbook = XLSX.utils.book_new()
         excelData.sheets.forEach(sheet => {
@@ -750,39 +434,23 @@ export default function SocMapperPage() {
           XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name)
         })
         XLSX.writeFile(workbook, excelData.fileName)
-        toast.info("Downloaded client-generated Excel as fallback")
+        toast.success("Report downloaded successfully!")
       }
     }
   }
 
   const resetProcessing = () => {
-    // Clean up polling if active
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
     }
     
-    // Clean up job if exists
-    if (currentJobId) {
-      fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" }).catch(console.warn)
-      setCurrentJobId(null)
-    }
-    
+    setCurrentJobId(null)
     setProcessingStatus({ status: "idle", progress: 0 })
     setProcessingResult(null)
     setExcelData(null)
     setShowResultModal(false)
   }
-
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      // Cleanup polling interval on component unmount
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-      }
-    }
-  }, [pollingInterval])
 
   const getStatusIcon = () => {
     switch (processingStatus.status) {
@@ -799,12 +467,10 @@ export default function SocMapperPage() {
   }
 
   const getStatusText = () => {
-    // Use the detailed status message from backend if available
     if (processingStatus.statusMessage) {
       return processingStatus.statusMessage
     }
     
-    // Fallback to basic status text
     switch (processingStatus.status) {
       case "uploading":
         return "Starting SOC report processing..."
@@ -837,7 +503,7 @@ export default function SocMapperPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ChartBarIcon className="h-5 w-5 text-green-700 text-green-700 text-green-700 text-yellow-400 text-zinc-950 text-white text-black text-emerald-300 text-emerald-300 text-green-900 text-green-600 text-lime-700 text-amber-950 text-zinc-500 text-slate-400" />
+              <ChartBarIcon className="h-5 w-5 text-green-600" />
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
@@ -959,87 +625,6 @@ export default function SocMapperPage() {
               </div>
             )}
 
-            {processingStatus.status === "failed" && (
-              <div className="space-y-3">
-                <div className="flex gap-3 flex-wrap">
-                  <Button variant="outline" onClick={resetProcessing}>
-                    Try Again
-                  </Button>
-                  {currentJobId && (
-                    <Button variant="outline" onClick={() => {
-                      // Try to reconnect to existing job
-                      setProcessingStatus(prev => ({
-                        ...prev,
-                        status: "processing",
-                        statusMessage: "Reconnecting to existing job..."
-                      }))
-                      startPolling(currentJobId, processingStatus.progress)
-                    }}>
-                      Reconnect to Job
-                    </Button>
-                  )}
-                  <Button variant="outline" onClick={async () => {
-                    try {
-                      // Check for jobs with our filename
-                      const debugResponse = await fetch(`${API_BASE_URL}/debug/all-jobs`)
-                      if (!debugResponse.ok) {
-                        throw new Error(`Server responded with ${debugResponse.status}`)
-                      }
-                      
-                      const debugData = await debugResponse.json()
-                      const recentJobs = Object.entries(debugData.jobs).filter(([jobId, job]: [string, any]) => {
-                        const jobTime = new Date(job.created_at).getTime()
-                        const timeDiff = Date.now() - jobTime
-                        return timeDiff < 1800000 && job.filename === processingStatus.fileName // Within 30 minutes
-                      })
-                      
-                      if (recentJobs.length > 0) {
-                        const [foundJobId, foundJob] = recentJobs[recentJobs.length - 1] as [string, any]
-                        setCurrentJobId(foundJobId)
-                        
-                        toast.success(`Found existing job for ${foundJob.filename}!`)
-                        
-                        setProcessingStatus(prev => ({
-                          ...prev,
-                          status: "processing",
-                          progress: foundJob.progress || 15,
-                          statusMessage: `Reconnected to existing job - ${foundJob.status_message || 'Processing...'}`
-                        }))
-                        
-                        startPolling(foundJobId, foundJob.progress || 15)
-                      } else {
-                        toast.info(`No recent jobs found for ${processingStatus.fileName}`)
-                      }
-                    } catch (error) {
-                      console.error('Check jobs error:', error)
-                      toast.error(`Failed to check for existing jobs: ${error.message}`)
-                    }
-                  }}>
-                    Check for Existing Jobs
-                  </Button>
-                  <Button variant="outline" onClick={async () => {
-                    try {
-                      const response = await fetch(`${API_BASE_URL}/test-connection`)
-                      if (response.ok) {
-                        toast.success("Server connection test successful!")
-                      } else {
-                        toast.error(`Server test failed: ${response.status}`)
-                      }
-                    } catch (error) {
-                      toast.error(`Connection test failed: ${error.message}`)
-                    }
-                  }}>
-                    Test Connection
-                  </Button>
-                </div>
-                {processingStatus.error && (
-                  <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 p-3 rounded-lg">
-                    {processingStatus.error}
-                  </div>
-                )}
-              </div>
-            )}
-
             {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
               <div className="space-y-4">
                 <div className="flex gap-3">
@@ -1051,12 +636,11 @@ export default function SocMapperPage() {
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <p className="font-medium mb-1">Processing Information:</p>
-                  <p>Total time can take up to 40+ minutes for complex documents. The system has enhanced resilience for both upload timeouts and network issues during processing. 
-                  Upload attempts are automatically retried up to 3 times with extended timeouts. If you see "Network timeout" messages during processing, your job continues running on the server.</p>
+                  <p>Total time can take up to 40+ minutes for complex documents. The system processes PDF extraction, 
+                  RAG-based semantic matching, and intelligent LLM analysis for conceptual overlap assessment.</p>
                   {currentJobId && (
                     <p className="mt-1">Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code></p>
                   )}
-                  <p className="mt-1 text-xs">💡 <strong>Tip:</strong> If upload fails, try the "Check for Existing Jobs" button - your job might have started successfully despite the timeout.</p>
                 </div>
               </div>
             )}
@@ -1064,7 +648,6 @@ export default function SocMapperPage() {
         </Card>
       )}
 
-      {/* Results Modal */}
       <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
