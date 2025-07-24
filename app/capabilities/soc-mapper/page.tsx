@@ -385,9 +385,23 @@ export default function SocMapperPage() {
     formData.append("file", file)
 
     try {
+      // First, check if server is accessible
+      try {
+        const healthResponse = await fetch(`${API_BASE_URL}/health`, {
+          method: "GET",
+          mode: "cors"
+        })
+        if (!healthResponse.ok) {
+          throw new Error(`Server health check failed: ${healthResponse.status}`)
+        }
+      } catch (healthError) {
+        throw new Error(`Cannot connect to server at ${API_BASE_URL}. Please check if the server is running.`)
+      }
+
       // Start the processing job
       const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
         method: "POST",
+        mode: "cors",
         body: formData,
       })
 
@@ -424,12 +438,21 @@ export default function SocMapperPage() {
 
     } catch (error) {
       console.error("Upload error:", error)
+      let errorMessage = error instanceof Error ? error.message : "Upload failed"
+      
+      // Provide specific guidance for common errors
+      if (errorMessage.includes("CORS") || errorMessage.includes("Cross-Origin")) {
+        errorMessage = "CORS error: Please check server configuration and ensure it's running with proper CORS headers."
+      } else if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
+        errorMessage = `Cannot connect to server at ${API_BASE_URL}. Please verify the server is running and accessible.`
+      }
+      
       setProcessingStatus(prev => ({
         ...prev,
         status: "failed",
-        error: error instanceof Error ? error.message : "Upload failed"
+        error: errorMessage
       }))
-      toast.error(error instanceof Error ? error.message : "Failed to start SOC report processing")
+      toast.error(errorMessage)
     }
   }
 
