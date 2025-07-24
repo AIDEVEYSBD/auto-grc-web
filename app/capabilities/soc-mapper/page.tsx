@@ -26,6 +26,7 @@ interface ProcessingStatus {
   status: "idle" | "uploading" | "processing" | "completed" | "failed"
   progress: number
   fileName?: string
+  statusMessage?: string
   startTime?: number
   completedAt?: number
   error?: string
@@ -260,7 +261,7 @@ export default function SocMapperPage() {
 
   const startPolling = (jobId: string) => {
     let consecutiveErrors = 0
-    const maxConsecutiveErrors = 3
+    const maxConsecutiveErrors = 6  // Increased from 3 to handle longer operations
     
     const pollJobStatus = async () => {
       try {
@@ -269,6 +270,9 @@ export default function SocMapperPage() {
         if (!statusResponse.ok) {
           if (statusResponse.status === 404) {
             throw new Error("Job not found on server")
+          }
+          if (statusResponse.status === 524) {
+            throw new Error("Server timeout - processing continues in background")
           }
           throw new Error(`HTTP ${statusResponse.status}: ${statusResponse.statusText}`)
         }
@@ -282,6 +286,7 @@ export default function SocMapperPage() {
         setProcessingStatus(prev => ({
           ...prev,
           progress: statusData.progress || prev.progress,
+          statusMessage: statusData.status_message || prev.statusMessage,
           status: statusData.status === "completed" ? "completed" : 
                   statusData.status === "failed" ? "failed" : "processing"
         }))
@@ -297,6 +302,7 @@ export default function SocMapperPage() {
             ...prev,
             status: "completed",
             progress: 100,
+            statusMessage: "Processing completed successfully!",
             completedAt: Date.now()
           }))
 
@@ -328,6 +334,7 @@ export default function SocMapperPage() {
           setProcessingStatus(prev => ({
             ...prev,
             status: "failed",
+            statusMessage: statusData.status_message || prev.statusMessage,
             error: statusData.error || "Processing failed"
           }))
 
@@ -341,6 +348,16 @@ export default function SocMapperPage() {
         console.error("Polling error:", pollError)
         consecutiveErrors++
         
+        // For timeout errors, provide more helpful feedback but don't fail immediately
+        if (pollError instanceof Error && (pollError.message.includes("524") || pollError.message.includes("timeout"))) {
+          setProcessingStatus(prev => ({
+            ...prev,
+            statusMessage: "Connection timeout - processing continues on server..."
+          }))
+          // Don't count timeouts as harshly as other errors
+          consecutiveErrors = Math.max(0, consecutiveErrors - 0.5)
+        }
+        
         // If we have too many consecutive errors, stop polling and show error
         if (consecutiveErrors >= maxConsecutiveErrors) {
           if (pollingInterval) {
@@ -348,14 +365,22 @@ export default function SocMapperPage() {
             setPollingInterval(null)
           }
           
+          let errorMessage = `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`
+          
+          // Provide specific guidance for common issues
+          if (errorMessage.includes("524") || errorMessage.includes("timeout")) {
+            errorMessage = "Server timeout detected. Your processing may still be running in the background. You can try refreshing the page or wait a few minutes and check back."
+          }
+          
           setProcessingStatus(prev => ({
             ...prev,
             status: "failed",
-            error: `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`
+            statusMessage: "Connection lost to server",
+            error: errorMessage
           }))
           
           setCurrentJobId(null)
-          toast.error("Lost connection to server. Please check your connection and try again.")
+          toast.error("Connection lost. Processing may still be running on the server.")
         }
         
         // Don't stop polling on network errors unless we've had too many
@@ -366,8 +391,8 @@ export default function SocMapperPage() {
     // Start immediate poll
     pollJobStatus()
 
-    // Set up interval polling every 5 seconds
-    const interval = setInterval(pollJobStatus, 5000)
+    // Set up interval polling every 8 seconds (increased from 5 to reduce server load)
+    const interval = setInterval(pollJobStatus, 8000)
     setPollingInterval(interval)
   }
 
@@ -377,6 +402,7 @@ export default function SocMapperPage() {
     setProcessingStatus({
       status: "uploading",
       progress: 10,
+      statusMessage: "Uploading file and starting processing...",
       fileName: file.name,
       startTime: Date.now()
     })
@@ -430,7 +456,8 @@ export default function SocMapperPage() {
       setProcessingStatus(prev => ({ 
         ...prev, 
         status: "processing", 
-        progress: 20 
+        progress: 20,
+        statusMessage: "File uploaded successfully, processing started..."
       }))
 
       // Start polling for job status
@@ -450,6 +477,7 @@ export default function SocMapperPage() {
       setProcessingStatus(prev => ({
         ...prev,
         status: "failed",
+        statusMessage: "Upload failed",
         error: errorMessage
       }))
       toast.error(errorMessage)
@@ -573,6 +601,12 @@ export default function SocMapperPage() {
   }
 
   const getStatusText = () => {
+    // Use the detailed status message from backend if available
+    if (processingStatus.statusMessage) {
+      return processingStatus.statusMessage
+    }
+    
+    // Fallback to basic status text
     switch (processingStatus.status) {
       case "uploading":
         return "Starting SOC report processing..."
@@ -738,12 +772,11 @@ export default function SocMapperPage() {
             {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
               <div className="space-y-4">
                 <div className="text-sm text-gray-600 dark:text-gray-400">
-                  <p>• Extracting controls from SOC report (pages 36-81)</p>
-                  <p>• Generating regex patterns for chunking</p>
-                  <p>• Running RAG matching against CIS framework</p>
-                  <p>• Enhancing with LLM conceptual overlap analysis</p>
-                  <p>• Generating final compliance report</p>
-                  <p>• Processing running in background - safe to wait</p>
+                  <p>• <strong>Text Extraction</strong> (5%): Extracting controls from SOC report (pages 36-81)</p>
+                  <p>• <strong>RAG Matching</strong> (30%): Finding matches against CIS framework (up to 10 min)</p>
+                  <p>• <strong>LLM Analysis</strong> (95%): Intelligent conceptual overlap analysis (up to 30 min)</p>
+                  <p>• <strong>Report Generation</strong> (100%): Creating final compliance report</p>
+                  <p className="mt-2 font-medium">Your processing continues safely on the server even if connection is lost.</p>
                 </div>
                 
                 <div className="flex gap-3">
@@ -754,10 +787,10 @@ export default function SocMapperPage() {
                 </div>
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <p className="font-medium mb-1">Enhanced analysis process:</p>
-                  <p>This process includes RAG matching, LLM conceptual overlap analysis, and final report generation, which can take up to 1 hour depending on document size and complexity. 
-                  The system polls the server every 5 seconds for updates. You can safely close this 
-                  window and return later - the process will continue running on the server.</p>
+                  <p className="font-medium mb-1">Processing Information:</p>
+                  <p>Total time can take up to 40+ minutes for complex documents. The system polls every 8 seconds for updates. 
+                  If you see connection timeouts, don't worry - your job continues running on the server. You can safely close this 
+                  window and return later to check progress.</p>
                   {currentJobId && (
                     <p className="mt-1">Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code></p>
                   )}
