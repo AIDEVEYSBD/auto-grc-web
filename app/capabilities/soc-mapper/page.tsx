@@ -261,18 +261,28 @@ export default function SocMapperPage() {
 
   const startPolling = (jobId: string) => {
     let consecutiveErrors = 0
-    const maxConsecutiveErrors = 6  // Increased from 3 to handle longer operations
+    let totalTimeoutErrors = 0
+    const maxConsecutiveErrors = 8  // Increased tolerance
+    const maxTimeoutErrors = 15     // Allow more timeout errors before giving up
     
     const pollJobStatus = async () => {
       try {
-        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30s timeout
+        
+        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`, {
+          signal: controller.signal
+        })
+        
+        clearTimeout(timeoutId)
         
         if (!statusResponse.ok) {
           if (statusResponse.status === 404) {
             throw new Error("Job not found on server")
           }
           if (statusResponse.status === 524) {
-            throw new Error("Server timeout - processing continues in background")
+            totalTimeoutErrors++
+            throw new Error(`Server timeout (${totalTimeoutErrors}/${maxTimeoutErrors})`)
           }
           throw new Error(`HTTP ${statusResponse.status}: ${statusResponse.statusText}`)
         }
@@ -281,6 +291,9 @@ export default function SocMapperPage() {
         
         // Reset error counter on successful response
         consecutiveErrors = 0
+        
+        // Log the received data for debugging
+        console.log(`Job ${jobId} status:`, statusData.progress, statusData.status_message)
         
         // Update progress based on job status
         setProcessingStatus(prev => ({
@@ -348,28 +361,41 @@ export default function SocMapperPage() {
         console.error("Polling error:", pollError)
         consecutiveErrors++
         
-        // For timeout errors, provide more helpful feedback but don't fail immediately
-        if (pollError instanceof Error && (pollError.message.includes("524") || pollError.message.includes("timeout"))) {
-          setProcessingStatus(prev => ({
-            ...prev,
-            statusMessage: "Connection timeout - processing continues on server..."
-          }))
-          // Don't count timeouts as harshly as other errors
-          consecutiveErrors = Math.max(0, consecutiveErrors - 0.5)
+        // Handle different types of errors
+        let isTimeoutError = false
+        if (pollError instanceof Error) {
+          const errorMsg = pollError.message.toLowerCase()
+          if (errorMsg.includes("524") || errorMsg.includes("timeout") || errorMsg.includes("aborted")) {
+            isTimeoutError = true
+            totalTimeoutErrors++
+            
+            setProcessingStatus(prev => ({
+              ...prev,
+              statusMessage: `Connection timeout (${totalTimeoutErrors}/${maxTimeoutErrors}) - processing continues...`
+            }))
+            
+            // Don't count timeouts as harshly against consecutive errors
+            consecutiveErrors = Math.max(0, consecutiveErrors - 0.5)
+          }
         }
         
-        // If we have too many consecutive errors, stop polling and show error
-        if (consecutiveErrors >= maxConsecutiveErrors) {
+        // Check if we should stop polling
+        const shouldStop = consecutiveErrors >= maxConsecutiveErrors || 
+                          (isTimeoutError && totalTimeoutErrors >= maxTimeoutErrors)
+        
+        if (shouldStop) {
           if (pollingInterval) {
             clearInterval(pollingInterval)
             setPollingInterval(null)
           }
           
-          let errorMessage = `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`
+          let errorMessage = `Connection issues detected: ${pollError instanceof Error ? pollError.message : "Unknown error"}`
           
-          // Provide specific guidance for common issues
-          if (errorMessage.includes("524") || errorMessage.includes("timeout")) {
-            errorMessage = "Server timeout detected. Your processing may still be running in the background. You can try refreshing the page or wait a few minutes and check back."
+          // Provide specific guidance based on error type
+          if (isTimeoutError) {
+            errorMessage = "Multiple connection timeouts detected. Your processing is likely still running on the server. Please wait a few minutes and refresh the page to check status."
+          } else {
+            errorMessage = "Lost connection to server. Your processing may still be running. Please check your internet connection and try refreshing the page."
           }
           
           setProcessingStatus(prev => ({
@@ -380,7 +406,7 @@ export default function SocMapperPage() {
           }))
           
           setCurrentJobId(null)
-          toast.error("Connection lost. Processing may still be running on the server.")
+          toast.error("Connection lost. Your job may still be running on the server.")
         }
         
         // Don't stop polling on network errors unless we've had too many
@@ -391,8 +417,8 @@ export default function SocMapperPage() {
     // Start immediate poll
     pollJobStatus()
 
-    // Set up interval polling every 5 seconds (reduced from 8)
-    const interval = setInterval(pollJobStatus, 5000)
+    // Set up interval polling every 4 seconds
+    const interval = setInterval(pollJobStatus, 4000)
     setPollingInterval(interval)
   }
 
@@ -762,10 +788,44 @@ export default function SocMapperPage() {
             )}
 
             {processingStatus.status === "failed" && (
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={resetProcessing}>
-                  Try Again
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={resetProcessing}>
+                    Try Again
+                  </Button>
+                  {currentJobId && (
+                    <Button variant="outline" onClick={() => {
+                      // Try to reconnect to existing job
+                      setProcessingStatus(prev => ({
+                        ...prev,
+                        status: "processing",
+                        statusMessage: "Reconnecting to existing job..."
+                      }))
+                      startPolling(currentJobId)
+                    }}>
+                      Reconnect to Job
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={async () => {
+                    try {
+                      const response = await fetch(`${API_BASE_URL}/test-connection`)
+                      if (response.ok) {
+                        toast.success("Server connection test successful!")
+                      } else {
+                        toast.error(`Server test failed: ${response.status}`)
+                      }
+                    } catch (error) {
+                      toast.error(`Connection test failed: ${error.message}`)
+                    }
+                  }}>
+                    Test Connection
+                  </Button>
+                </div>
+                {processingStatus.error && (
+                  <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 p-3 rounded-lg">
+                    {processingStatus.error}
+                  </div>
+                )}
               </div>
             )}
 
@@ -780,7 +840,7 @@ export default function SocMapperPage() {
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <p className="font-medium mb-1">Processing Information:</p>
-                  <p>Total time can take up to 40+ minutes for complex documents. The system polls every 5 seconds for updates. 
+                  <p>Total time can take up to 40+ minutes for complex documents. The system polls every 4 seconds with 20-second server heartbeats. 
                   If you see connection timeouts, don't worry - your job continues running on the server. You can safely close this 
                   window and return later to check progress.</p>
                   {currentJobId && (
