@@ -259,14 +259,14 @@ export default function SocMapperPage() {
     }
   }
 
-  const startPolling = (jobId: string) => {
+  const startPolling = (jobId: string, initialProgress?: number) => {
     let networkErrorCount = 0
     let hardErrorCount = 0
     const maxNetworkErrors = 20     // Allow many network errors
     const maxHardErrors = 5         // Fewer hard errors (404, 500, etc.)
     let currentBackoffDelay = 4000  // Start with 4 seconds
     const maxBackoffDelay = 30000   // Max 30 seconds between polls
-    let lastKnownProgress = 0       // Track progress to prevent regression
+    let lastKnownProgress = initialProgress || 0       // Track progress to prevent regression
     
     const pollJobStatus = async () => {
       try {
@@ -457,12 +457,21 @@ export default function SocMapperPage() {
     // Start immediate poll
     pollJobStatus()
 
-    // Set up interval polling with dynamic backoff
-    const interval = setInterval(() => {
-      pollJobStatus()
-    }, currentBackoffDelay)
+    // Set up interval polling - start with base interval, will be cleared and recreated with backoff if needed
+    let currentInterval = setInterval(pollJobStatus, currentBackoffDelay)
+    setPollingInterval(currentInterval)
     
-    setPollingInterval(interval)
+    // Update the interval when backoff changes
+    const updatePollingInterval = () => {
+      if (currentInterval) {
+        clearInterval(currentInterval)
+      }
+      currentInterval = setInterval(pollJobStatus, currentBackoffDelay)
+      setPollingInterval(currentInterval)
+    }
+    
+    // This doesn't actually work in the current structure, but leaving the logic
+    // for potential future enhancement where polling delay could be dynamic
   }
 
   const uploadFile = async () => {
@@ -470,7 +479,7 @@ export default function SocMapperPage() {
 
     setProcessingStatus({
       status: "uploading",
-      progress: 10,
+      progress: 5,
       statusMessage: "Uploading file and starting processing...",
       fileName: file.name,
       startTime: Date.now()
@@ -479,74 +488,194 @@ export default function SocMapperPage() {
     const formData = new FormData()
     formData.append("file", file)
 
-    try {
-      // First, check if server is accessible
+    let retryCount = 0
+    const maxRetries = 3
+    const retryDelay = 5000 // 5 seconds between retries
+
+    const attemptUpload = async (): Promise<any> => {
       try {
-        const healthResponse = await fetch(`${API_BASE_URL}/health`, {
-          method: "GET",
-          mode: "cors"
-        })
-        if (!healthResponse.ok) {
-          throw new Error(`Server health check failed: ${healthResponse.status}`)
+        // Show current attempt
+        if (retryCount > 0) {
+          setProcessingStatus(prev => ({
+            ...prev,
+            progress: 5 + (retryCount * 2),
+            statusMessage: `Upload attempt ${retryCount + 1}/${maxRetries + 1}...`
+          }))
         }
-      } catch (healthError) {
-        throw new Error(`Cannot connect to server at ${API_BASE_URL}. Please check if the server is running.`)
-      }
 
-      // Start the processing job
-      const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
-        method: "POST",
-        mode: "cors",
-        body: formData,
-      })
-
-      if (!startResponse.ok) {
-        let errorMessage = "Failed to start processing"
+        // Health check with shorter timeout for faster feedback
         try {
-          const errorData = await startResponse.json()
-          errorMessage = errorData.detail || errorMessage
-        } catch {
-          // If we can't parse the error response, use the status text
-          errorMessage = `HTTP ${startResponse.status}: ${startResponse.statusText}`
+          const healthController = new AbortController()
+          const healthTimeout = setTimeout(() => healthController.abort(), 10000)
+          
+          const healthResponse = await fetch(`${API_BASE_URL}/health`, {
+            method: "GET",
+            mode: "cors",
+            signal: healthController.signal
+          })
+          
+          clearTimeout(healthTimeout)
+          
+          if (!healthResponse.ok) {
+            throw new Error(`Server health check failed: ${healthResponse.status}`)
+          }
+        } catch (healthError) {
+          if (healthError.name === 'AbortError') {
+            throw new Error("Server health check timed out - server may be overloaded")
+          }
+          throw new Error(`Cannot connect to server at ${API_BASE_URL}. Please check if the server is running.`)
         }
-        throw new Error(errorMessage)
-      }
 
-      const startResult = await startResponse.json()
-      
-      // Validate that we got a job ID
-      if (!startResult.job_id) {
-        throw new Error("Server did not return a job ID")
+        // Update progress after health check
+        setProcessingStatus(prev => ({
+          ...prev,
+          progress: 8,
+          statusMessage: "Server accessible, starting file upload..."
+        }))
+
+        // Upload with extended timeout
+        const uploadController = new AbortController()
+        const uploadTimeout = setTimeout(() => uploadController.abort(), 120000) // 2 minutes timeout
+        
+        const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
+          method: "POST",
+          mode: "cors",
+          body: formData,
+          signal: uploadController.signal
+        })
+
+        clearTimeout(uploadTimeout)
+
+        // Handle different response scenarios
+        if (!startResponse.ok) {
+          let errorMessage = "Failed to start processing"
+          
+          // Handle 524 specifically - this means the job might have started but response timed out
+          if (startResponse.status === 524) {
+            throw new Error("UPLOAD_TIMEOUT_524")
+          }
+          
+          try {
+            const errorData = await startResponse.json()
+            errorMessage = errorData.detail || errorMessage
+          } catch {
+            errorMessage = `HTTP ${startResponse.status}: ${startResponse.statusText}`
+          }
+          throw new Error(errorMessage)
+        }
+
+        const startResult = await startResponse.json()
+        
+        // Validate that we got a job ID
+        if (!startResult.job_id) {
+          throw new Error("Server did not return a job ID")
+        }
+        
+        return startResult.job_id
+
+      } catch (error) {
+        retryCount++
+        
+        // Handle specific error types
+        if (error instanceof Error) {
+          const errorMsg = error.message
+          
+          // For 524 or network timeouts, the job might have started - check for existing jobs
+          if (errorMsg.includes("524") || errorMsg.includes("UPLOAD_TIMEOUT_524") || 
+              errorMsg.includes("timeout") || error.name === 'AbortError') {
+            
+            if (retryCount <= maxRetries) {
+              setProcessingStatus(prev => ({
+                ...prev,
+                statusMessage: `Upload timeout (attempt ${retryCount}/${maxRetries + 1}) - job may have started, retrying...`
+              }))
+              
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, retryDelay))
+              
+              // Before retrying, check if there are any recent jobs that might be ours
+              try {
+                const debugResponse = await fetch(`${API_BASE_URL}/debug/all-jobs`)
+                if (debugResponse.ok) {
+                  const debugData = await debugResponse.json()
+                  
+                  // Look for a recent job with our filename
+                  const recentJobs = Object.entries(debugData.jobs).filter(([jobId, job]: [string, any]) => {
+                    const jobTime = new Date(job.created_at).getTime()
+                    const timeDiff = Date.now() - jobTime
+                    return timeDiff < 300000 && job.filename === file.name // Within 5 minutes
+                  })
+                  
+                  if (recentJobs.length > 0) {
+                    const [foundJobId, foundJob] = recentJobs[recentJobs.length - 1] // Get most recent
+                    console.log(`Found existing job ${foundJobId} for file ${file.name}`)
+                    
+                    // Update processing status with found job progress
+                    setProcessingStatus(prev => ({
+                      ...prev,
+                      progress: Math.max(foundJob.progress || 15, prev.progress),
+                      statusMessage: `Found existing job - ${foundJob.status_message || 'Processing...'}`
+                    }))
+                    
+                    return foundJobId
+                  }
+                }
+              } catch (debugError) {
+                console.warn("Could not check for existing jobs:", debugError)
+              }
+              
+              return attemptUpload() // Retry
+            }
+          }
+          
+          // For other errors, retry if we haven't exceeded max retries
+          if (retryCount <= maxRetries && !errorMsg.includes("health check")) {
+            setProcessingStatus(prev => ({
+              ...prev,
+              statusMessage: `Upload failed (attempt ${retryCount}/${maxRetries + 1}), retrying...`
+            }))
+            
+            await new Promise(resolve => setTimeout(resolve, retryDelay))
+            return attemptUpload()
+          }
+        }
+        
+        // If we've exhausted retries or it's a non-retryable error, throw it
+        throw error
       }
-      
-      const jobId = startResult.job_id
+    }
+
+    try {
+      const jobId = await attemptUpload()
       setCurrentJobId(jobId)
 
       setProcessingStatus(prev => ({ 
         ...prev, 
         status: "processing", 
-        progress: 20,
+        progress: Math.max(prev.progress, 15),
         statusMessage: "File uploaded successfully, processing started..."
       }))
 
       // Start polling for job status
-      startPolling(jobId)
+      startPolling(jobId, 15)
 
     } catch (error) {
-      console.error("Upload error:", error)
+      console.error("Upload error after all retries:", error)
       let errorMessage = error instanceof Error ? error.message : "Upload failed"
       
       // Provide specific guidance for common errors
-      if (errorMessage.includes("CORS") || errorMessage.includes("Cross-Origin")) {
-        errorMessage = "CORS error: Please check server configuration and ensure it's running with proper CORS headers."
+      if (errorMessage.includes("CORS") || errorMessage.includes("Cross-Origin") || errorMessage.includes("524")) {
+        errorMessage = `Upload timed out or CORS error. This often happens with large files or server overload. The job may have started anyway - check the server logs or try refreshing. If the issue persists, try a smaller file or contact support.`
       } else if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
         errorMessage = `Cannot connect to server at ${API_BASE_URL}. Please verify the server is running and accessible.`
+      } else if (errorMessage.includes("timeout") || errorMessage.includes("AbortError")) {
+        errorMessage = `Upload timed out after ${retryCount} attempts. The server may be processing a large backlog. Your job might have started - check back in a few minutes or try with a smaller file.`
       }
       
       setProcessingStatus(prev => ({
         ...prev,
         status: "failed",
-        statusMessage: "Upload failed",
+        statusMessage: "Upload failed after retries",
         error: errorMessage
       }))
       toast.error(errorMessage)
@@ -832,7 +961,7 @@ export default function SocMapperPage() {
 
             {processingStatus.status === "failed" && (
               <div className="space-y-3">
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
                   <Button variant="outline" onClick={resetProcessing}>
                     Try Again
                   </Button>
@@ -844,11 +973,50 @@ export default function SocMapperPage() {
                         status: "processing",
                         statusMessage: "Reconnecting to existing job..."
                       }))
-                      startPolling(currentJobId)
+                      startPolling(currentJobId, processingStatus.progress)
                     }}>
                       Reconnect to Job
                     </Button>
                   )}
+                  <Button variant="outline" onClick={async () => {
+                    try {
+                      // Check for jobs with our filename
+                      const debugResponse = await fetch(`${API_BASE_URL}/debug/all-jobs`)
+                      if (!debugResponse.ok) {
+                        throw new Error(`Server responded with ${debugResponse.status}`)
+                      }
+                      
+                      const debugData = await debugResponse.json()
+                      const recentJobs = Object.entries(debugData.jobs).filter(([jobId, job]: [string, any]) => {
+                        const jobTime = new Date(job.created_at).getTime()
+                        const timeDiff = Date.now() - jobTime
+                        return timeDiff < 1800000 && job.filename === processingStatus.fileName // Within 30 minutes
+                      })
+                      
+                      if (recentJobs.length > 0) {
+                        const [foundJobId, foundJob] = recentJobs[recentJobs.length - 1] as [string, any]
+                        setCurrentJobId(foundJobId)
+                        
+                        toast.success(`Found existing job for ${foundJob.filename}!`)
+                        
+                        setProcessingStatus(prev => ({
+                          ...prev,
+                          status: "processing",
+                          progress: foundJob.progress || 15,
+                          statusMessage: `Reconnected to existing job - ${foundJob.status_message || 'Processing...'}`
+                        }))
+                        
+                        startPolling(foundJobId, foundJob.progress || 15)
+                      } else {
+                        toast.info(`No recent jobs found for ${processingStatus.fileName}`)
+                      }
+                    } catch (error) {
+                      console.error('Check jobs error:', error)
+                      toast.error(`Failed to check for existing jobs: ${error.message}`)
+                    }
+                  }}>
+                    Check for Existing Jobs
+                  </Button>
                   <Button variant="outline" onClick={async () => {
                     try {
                       const response = await fetch(`${API_BASE_URL}/test-connection`)
@@ -883,12 +1051,12 @@ export default function SocMapperPage() {
                 
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <p className="font-medium mb-1">Processing Information:</p>
-                  <p>Total time can take up to 40+ minutes for complex documents. The system has improved resilience to network timeouts. 
-                  If you see "Network timeout" messages, don't worry - your job continues running on the server. You can safely close this 
-                  window and return later to check progress.</p>
+                  <p>Total time can take up to 40+ minutes for complex documents. The system has enhanced resilience for both upload timeouts and network issues during processing. 
+                  Upload attempts are automatically retried up to 3 times with extended timeouts. If you see "Network timeout" messages during processing, your job continues running on the server.</p>
                   {currentJobId && (
                     <p className="mt-1">Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code></p>
                   )}
+                  <p className="mt-1 text-xs">💡 <strong>Tip:</strong> If upload fails, try the "Check for Existing Jobs" button - your job might have started successfully despite the timeout.</p>
                 </div>
               </div>
             )}
