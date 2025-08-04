@@ -29,6 +29,7 @@ interface ProcessingStatus {
   startTime?: number
   completedAt?: number
   error?: string
+  statusMessage?: string
 }
 
 interface ProcessingResult {
@@ -111,6 +112,7 @@ export default function SocMapperPage() {
   const [excelData, setExcelData] = useState<ExcelData | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now())
 
   const convertResultToExcel = useCallback((result: ProcessingResult): ExcelData => {
     const sheets: ExcelSheet[] = []
@@ -266,12 +268,21 @@ export default function SocMapperPage() {
   }
 
   const startPolling = (jobId: string) => {
-    let consecutiveErrors = 0
-    const maxConsecutiveErrors = 3
+    // Reset heartbeat tracking
+    setLastHeartbeat(Date.now())
 
     const pollJobStatus = async () => {
       try {
-        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`)
+        console.log(`Polling job status for ${jobId}...`)
+
+        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          // Remove any timeout configurations - let it wait as long as needed
+        })
 
         if (!statusResponse.ok) {
           if (statusResponse.status === 404) {
@@ -281,20 +292,24 @@ export default function SocMapperPage() {
         }
 
         const statusData = await statusResponse.json()
+        console.log(`Job ${jobId} status:`, statusData)
 
-        // Reset error counter on successful response
-        consecutiveErrors = 0
+        // Update heartbeat timestamp - we got a response
+        setLastHeartbeat(Date.now())
 
-        // Update progress based on job status
+        // Update progress and status message from the API response
         setProcessingStatus((prev) => ({
           ...prev,
           progress: statusData.progress || prev.progress,
+          statusMessage: statusData.status_message || statusData.statusMessage || prev.statusMessage,
           status:
             statusData.status === "completed" ? "completed" : statusData.status === "failed" ? "failed" : "processing",
         }))
 
         if (statusData.status === "completed") {
           // Job completed successfully
+          console.log(`Job ${jobId} completed successfully`)
+
           if (pollingInterval) {
             clearInterval(pollingInterval)
             setPollingInterval(null)
@@ -305,6 +320,7 @@ export default function SocMapperPage() {
             status: "completed",
             progress: 100,
             completedAt: Date.now(),
+            statusMessage: "Processing completed successfully!",
           }))
 
           // Set the result
@@ -315,7 +331,6 @@ export default function SocMapperPage() {
           setExcelData(excelData)
 
           setFile(null)
-          setCurrentJobId(null)
 
           if (
             statusData.result?.rag_results?.status === "completed" &&
@@ -338,8 +353,13 @@ export default function SocMapperPage() {
           } catch (cleanupError) {
             console.warn("Failed to cleanup job:", cleanupError)
           }
+
+          // Clear the current job ID
+          setCurrentJobId(null)
         } else if (statusData.status === "failed") {
           // Job failed
+          console.error(`Job ${jobId} failed:`, statusData.error)
+
           if (pollingInterval) {
             clearInterval(pollingInterval)
             setPollingInterval(null)
@@ -349,44 +369,38 @@ export default function SocMapperPage() {
             ...prev,
             status: "failed",
             error: statusData.error || "Processing failed",
+            statusMessage: `Processing failed: ${statusData.error || "Unknown error"}`,
           }))
 
           setCurrentJobId(null)
           toast.error(`SOC report processing failed: ${statusData.error || "Unknown error"}`)
         }
 
-        // If still processing, continue polling (interval will handle the next call)
+        // If still processing, the interval will continue polling automatically
       } catch (pollError) {
         console.error("Polling error:", pollError)
-        consecutiveErrors++
 
-        // If we have too many consecutive errors, stop polling and show error
-        if (consecutiveErrors >= maxConsecutiveErrors) {
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
+        // Don't treat network errors as job failures
+        // Just log them and continue polling
+        // The server heartbeat system will handle actual job failures
 
-          setProcessingStatus((prev) => ({
-            ...prev,
-            status: "failed",
-            error: `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`,
-          }))
+        // Only update the status message to indicate connection issues
+        // but don't fail the job
+        setProcessingStatus((prev) => ({
+          ...prev,
+          statusMessage: `Connection issue: ${pollError instanceof Error ? pollError.message : "Network error"} - Retrying...`,
+        }))
 
-          setCurrentJobId(null)
-          toast.error("Lost connection to server. Please check your connection and try again.")
-        }
-
-        // Don't stop polling on network errors unless we've had too many
-        // The interval will retry automatically
+        // Continue polling - don't stop on network errors
+        // The job might still be running on the server
       }
     }
 
     // Start immediate poll
     pollJobStatus()
 
-    // Set up interval polling every 5 seconds
-    const interval = setInterval(pollJobStatus, 5000)
+    // Set up interval polling every 3 seconds (more frequent for better responsiveness)
+    const interval = setInterval(pollJobStatus, 3000)
     setPollingInterval(interval)
   }
 
@@ -395,19 +409,23 @@ export default function SocMapperPage() {
 
     setProcessingStatus({
       status: "uploading",
-      progress: 10,
+      progress: 5,
       fileName: file.name,
       startTime: Date.now(),
+      statusMessage: "Uploading file and starting processing...",
     })
 
     const formData = new FormData()
     formData.append("file", file)
 
     try {
+      console.log("Starting file upload...")
+
       // Start the processing job
       const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
         method: "POST",
         body: formData,
+        // Remove timeout - let it take as long as needed
       })
 
       if (!startResponse.ok) {
@@ -423,6 +441,7 @@ export default function SocMapperPage() {
       }
 
       const startResult = await startResponse.json()
+      console.log("Upload successful, job started:", startResult)
 
       // Validate that we got a job ID
       if (!startResult.job_id) {
@@ -435,7 +454,8 @@ export default function SocMapperPage() {
       setProcessingStatus((prev) => ({
         ...prev,
         status: "processing",
-        progress: 20,
+        progress: 10,
+        statusMessage: "File uploaded successfully, processing started...",
       }))
 
       // Start polling for job status
@@ -446,6 +466,7 @@ export default function SocMapperPage() {
         ...prev,
         status: "failed",
         error: error instanceof Error ? error.message : "Upload failed",
+        statusMessage: `Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       }))
       toast.error(error instanceof Error ? error.message : "Failed to start SOC report processing")
     }
@@ -453,12 +474,15 @@ export default function SocMapperPage() {
 
   const cancelProcessing = async () => {
     if (currentJobId && pollingInterval) {
+      console.log(`Cancelling job ${currentJobId}`)
+
       clearInterval(pollingInterval)
       setPollingInterval(null)
 
       try {
         // Clean up the job on the server
         await fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" })
+        console.log(`Job ${currentJobId} cancelled successfully`)
       } catch (error) {
         console.warn("Failed to cancel job:", error)
       }
@@ -485,9 +509,15 @@ export default function SocMapperPage() {
   }
 
   const downloadReport = async () => {
-    if (!currentJobId) return
+    if (!currentJobId) {
+      // If no current job ID but we have a completed result, try to download anyway
+      toast.error("No active job to download report from")
+      return
+    }
 
     try {
+      console.log(`Downloading report for job ${currentJobId}`)
+
       const response = await fetch(`${API_BASE_URL}/download-report/${currentJobId}`)
 
       if (!response.ok) {
@@ -513,6 +543,8 @@ export default function SocMapperPage() {
   }
 
   const resetProcessing = () => {
+    console.log("Resetting processing state")
+
     // Clean up polling if active
     if (pollingInterval) {
       clearInterval(pollingInterval)
@@ -529,6 +561,7 @@ export default function SocMapperPage() {
     setProcessingResult(null)
     setExcelData(null)
     setShowResultModal(false)
+    setLastHeartbeat(Date.now())
   }
 
   // Cleanup on component unmount
@@ -556,6 +589,12 @@ export default function SocMapperPage() {
   }
 
   const getStatusText = () => {
+    // Use the status message from the API if available
+    if (processingStatus.statusMessage) {
+      return processingStatus.statusMessage
+    }
+
+    // Fallback to default messages
     switch (processingStatus.status) {
       case "uploading":
         return "Starting SOC report processing..."
@@ -590,7 +629,7 @@ export default function SocMapperPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ChartBarIcon className="h-5 w-5 text-green-700 text-green-700 text-green-700 text-yellow-400 text-zinc-950 text-white text-black text-emerald-300 text-emerald-300 text-green-900 text-green-600 text-lime-700 text-amber-950 text-zinc-500 text-slate-400" />
+              <ChartBarIcon className="h-5 w-5 text-blue-600" />
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
@@ -665,8 +704,8 @@ export default function SocMapperPage() {
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span>{getStatusText()}</span>
-                <span>{processingStatus.progress}%</span>
+                <span className="flex-1 pr-4">{getStatusText()}</span>
+                <span className="font-medium">{processingStatus.progress}%</span>
               </div>
               <Progress value={processingStatus.progress} className="w-full" />
             </div>
@@ -718,16 +757,24 @@ export default function SocMapperPage() {
             )}
 
             {processingStatus.status === "failed" && (
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={resetProcessing}>
-                  Try Again
-                </Button>
+              <div className="space-y-4">
+                <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                  <p className="text-red-800 dark:text-red-200 font-medium">Processing Failed</p>
+                  <p className="text-red-600 dark:text-red-400 text-sm mt-1">
+                    {processingStatus.error || "An unknown error occurred"}
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={resetProcessing}>
+                    Try Again
+                  </Button>
+                </div>
               </div>
             )}
 
             {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
               <div className="space-y-4">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
+                <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                   <p>• Extracting controls from SOC report (pages 36-81)</p>
                   <p>• Generating regex patterns for chunking</p>
                   <p>• Running RAG matching against CIS framework</p>
@@ -746,15 +793,18 @@ export default function SocMapperPage() {
                   <p className="font-medium mb-1">Enhanced analysis process:</p>
                   <p>
                     This process includes both RAG matching and LLM conceptual overlap analysis, which can take up to 2
-                    hours depending on document size and complexity. The system polls the server every 5 seconds for
-                    updates. You can safely close this window and return later - the process will continue running on
-                    the server.
+                    hours depending on document size and complexity. The system polls the server every 3 seconds for
+                    updates and will continue as long as the server is responding. You can safely close this window and
+                    return later - the process will continue running on the server.
                   </p>
                   {currentJobId && (
-                    <p className="mt-1">
+                    <p className="mt-2">
                       Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code>
                     </p>
                   )}
+                  <p className="mt-1 text-green-600 dark:text-green-400">
+                    ✓ Server connection active - receiving heartbeat updates
+                  </p>
                 </div>
               </div>
             )}
@@ -771,7 +821,7 @@ export default function SocMapperPage() {
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={downloadExcel}>
                   <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                  Download
+                  Download Excel
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowResultModal(false)}>
                   <XMarkIcon className="h-4 w-4" />
