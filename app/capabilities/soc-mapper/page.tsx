@@ -44,7 +44,7 @@ interface ProcessingResult {
     text_chunks_count: number
     text_chunks: Array<{
       "Control ID": string
-      "Content": string
+      Content: string
     }>
     tables_count: number
     tables: any[]
@@ -104,7 +104,7 @@ export default function SocMapperPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
     status: "idle",
-    progress: 0
+    progress: 0,
   })
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null)
   const [showResultModal, setShowResultModal] = useState(false)
@@ -116,103 +116,110 @@ export default function SocMapperPage() {
     const sheets: ExcelSheet[] = []
 
     // Sheet 1: LLM Enhanced Analysis Results (Primary Results)
-    if (result.llm_analysis.enhanced_matches && result.llm_analysis.enhanced_matches.length > 0) {
+    if (result.llm_analysis?.enhanced_matches && result.llm_analysis.enhanced_matches.length > 0) {
       const enhancedData = [
-        ["RAG Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text", 
-         "Equivalence Type", "Confidence Score", "Mapping Justification", "Overlapping Concepts", 
-         "Distinct Concepts", "Conceptual Strength", "LLM Audit Notes"]
+        [
+          "RAG Rank",
+          "CIS Control ID",
+          "CIS Control Text",
+          "SOC Control ID",
+          "SOC Control Text",
+          "Equivalence Type",
+          "Confidence Score",
+          "Mapping Justification",
+          "Overlapping Concepts",
+          "Distinct Concepts",
+          "Conceptual Strength",
+          "LLM Audit Notes",
+        ],
       ]
-      
-      result.llm_analysis.enhanced_matches.forEach(match => {
+
+      result.llm_analysis.enhanced_matches.forEach((match) => {
         enhancedData.push([
-          match.rag_rank,
-          match.source_id,
-          match.source_text.substring(0, 200) + (match.source_text.length > 200 ? "..." : ""),
-          match.target_id,
-          match.target_text.substring(0, 200) + (match.target_text.length > 200 ? "..." : ""),
-          match.equivalence_type,
-          match.confidence_score,
-          match.mapping_justification,
-          match.overlapping_concepts,
-          match.distinct_concepts,
-          match.conceptual_strength,
-          match.llm_audit_notes
+          match.rag_rank || match.rank || "",
+          match.source_id || "",
+          match.source_text?.substring(0, 200) + (match.source_text?.length > 200 ? "..." : "") || "",
+          match.target_id || "",
+          match.target_text?.substring(0, 200) + (match.target_text?.length > 200 ? "..." : "") || "",
+          match.equivalence_type || "",
+          match.confidence_score || "",
+          match.mapping_justification || "",
+          match.overlapping_concepts || "",
+          match.distinct_concepts || "",
+          match.conceptual_strength || "",
+          match.llm_audit_notes || "",
         ])
       })
 
       sheets.push({
         name: "LLM Enhanced Analysis",
-        data: enhancedData
+        data: enhancedData,
       })
     }
 
     // Sheet 2: RAG Mapping Results (Original RAG Results)
-    if (result.rag_results.matches && result.rag_results.matches.length > 0) {
-      const mappingData = [
-        ["Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text"]
-      ]
-      
-      result.rag_results.matches.forEach(match => {
+    if (result.rag_results?.matches && result.rag_results.matches.length > 0) {
+      const mappingData = [["Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text"]]
+
+      result.rag_results.matches.forEach((match) => {
         mappingData.push([
-          match.rank,
-          match.source_id,
-          match.source_text.substring(0, 200) + (match.source_text.length > 200 ? "..." : ""),
-          match.target_id,
-          match.target_text.substring(0, 200) + (match.target_text.length > 200 ? "..." : "")
+          match.rank || "",
+          match.source_id || "",
+          match.source_text?.substring(0, 200) + (match.source_text?.length > 200 ? "..." : "") || "",
+          match.target_id || "",
+          match.target_text?.substring(0, 200) + (match.target_text?.length > 200 ? "..." : "") || "",
         ])
       })
 
       sheets.push({
         name: "RAG Mapping Results",
-        data: mappingData
+        data: mappingData,
       })
     }
 
     // Sheet 3: Extracted SOC Controls
-    if (result.parser_results.text_chunks && result.parser_results.text_chunks.length > 0) {
-      const chunksData = [
-        ["Control ID", "Control Content"]
-      ]
-      
-      result.parser_results.text_chunks.forEach(chunk => {
-        chunksData.push([
-          chunk["Control ID"],
-          chunk["Content"]
-        ])
+    if (result.parser_results?.text_chunks && result.parser_results.text_chunks.length > 0) {
+      const chunksData = [["Control ID", "Control Content"]]
+
+      result.parser_results.text_chunks.forEach((chunk) => {
+        chunksData.push([chunk["Control ID"] || "", chunk["Content"] || ""])
       })
 
       sheets.push({
         name: "Extracted SOC Controls",
-        data: chunksData
+        data: chunksData,
       })
     }
 
     // Sheet 4: Processing Summary
     const summaryData = [
       ["Metric", "Value"],
-      ["Filename", result.filename],
-      ["Pages Processed", `${result.processing_config.start_page} - ${result.processing_config.end_page}`],
-      ["Regex Pattern", result.processing_config.sample_control_id],
-      ["Extracted Text Length", result.parser_results.extracted_text_length],
-      ["Text Chunks Found", result.parser_results.text_chunks_count],
-      ["Tables Found", result.parser_results.tables_count],
-      ["RAG Status", result.rag_results.status],
-      ["RAG Matches", result.rag_results.matches_count],
-      ["LLM Analysis Status", result.llm_analysis.status],
-      ["LLM Enhanced Matches", result.llm_analysis.enhanced_matches_count],
-      ["LLM Model Used", result.llm_analysis.model_used || "N/A"],
-      ["Source Framework", result.rag_results.source_framework || "N/A"],
-      ["Top K Matches", result.rag_results.top_k || "N/A"]
+      ["Filename", result.filename || ""],
+      [
+        "Pages Processed",
+        `${result.processing_config?.start_page || ""} - ${result.processing_config?.end_page || ""}`,
+      ],
+      ["Regex Pattern", result.processing_config?.sample_control_id || ""],
+      ["Extracted Text Length", result.parser_results?.extracted_text_length || 0],
+      ["Text Chunks Found", result.parser_results?.text_chunks_count || 0],
+      ["Tables Found", result.parser_results?.tables_count || 0],
+      ["RAG Status", result.rag_results?.status || ""],
+      ["RAG Matches", result.rag_results?.matches_count || 0],
+      ["LLM Analysis Status", result.llm_analysis?.status || ""],
+      ["LLM Enhanced Matches", result.llm_analysis?.enhanced_matches_count || 0],
+      ["LLM Model Used", result.llm_analysis?.model_used || "N/A"],
+      ["Source Framework", result.rag_results?.source_framework || "N/A"],
+      ["Top K Matches", result.rag_results?.top_k || "N/A"],
     ]
 
     sheets.push({
       name: "Processing Summary",
-      data: summaryData
+      data: summaryData,
     })
 
     return {
       sheets,
-      fileName: result.filename.replace(".pdf", "_enhanced_soc_mapping.xlsx")
+      fileName: (result.filename || "soc_report").replace(".pdf", "_enhanced_soc_mapping.xlsx"),
     }
   }, [])
 
@@ -261,11 +268,11 @@ export default function SocMapperPage() {
   const startPolling = (jobId: string) => {
     let consecutiveErrors = 0
     const maxConsecutiveErrors = 3
-    
+
     const pollJobStatus = async () => {
       try {
         const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`)
-        
+
         if (!statusResponse.ok) {
           if (statusResponse.status === 404) {
             throw new Error("Job not found on server")
@@ -274,16 +281,16 @@ export default function SocMapperPage() {
         }
 
         const statusData = await statusResponse.json()
-        
+
         // Reset error counter on successful response
         consecutiveErrors = 0
-        
+
         // Update progress based on job status
-        setProcessingStatus(prev => ({
+        setProcessingStatus((prev) => ({
           ...prev,
           progress: statusData.progress || prev.progress,
-          status: statusData.status === "completed" ? "completed" : 
-                  statusData.status === "failed" ? "failed" : "processing"
+          status:
+            statusData.status === "completed" ? "completed" : statusData.status === "failed" ? "failed" : "processing",
         }))
 
         if (statusData.status === "completed") {
@@ -293,29 +300,36 @@ export default function SocMapperPage() {
             setPollingInterval(null)
           }
 
-          setProcessingStatus(prev => ({
+          setProcessingStatus((prev) => ({
             ...prev,
             status: "completed",
             progress: 100,
-            completedAt: Date.now()
+            completedAt: Date.now(),
           }))
 
           // Set the result
           setProcessingResult(statusData.result)
-          
+
           // Convert result to Excel format
           const excelData = convertResultToExcel(statusData.result)
           setExcelData(excelData)
-          
+
           setFile(null)
           setCurrentJobId(null)
-          
-          if (statusData.result.rag_results.status === "completed" && statusData.result.llm_analysis.status === "completed") {
+
+          if (
+            statusData.result?.rag_results?.status === "completed" &&
+            statusData.result?.llm_analysis?.status === "completed"
+          ) {
             toast.success("SOC mapping and LLM analysis completed successfully!")
-          } else if (statusData.result.rag_results.status === "completed") {
-            toast.warning(`RAG mapping completed but LLM analysis: ${statusData.result.llm_analysis.status}`)
+          } else if (statusData.result?.rag_results?.status === "completed") {
+            toast.warning(
+              `RAG mapping completed but LLM analysis: ${statusData.result?.llm_analysis?.status || "unknown"}`,
+            )
           } else {
-            toast.warning(`Processing completed but RAG matching: ${statusData.result.rag_results.status}`)
+            toast.warning(
+              `Processing completed but RAG matching: ${statusData.result?.rag_results?.status || "unknown"}`,
+            )
           }
 
           // Clean up the job on the server
@@ -324,7 +338,6 @@ export default function SocMapperPage() {
           } catch (cleanupError) {
             console.warn("Failed to cleanup job:", cleanupError)
           }
-
         } else if (statusData.status === "failed") {
           // Job failed
           if (pollingInterval) {
@@ -332,39 +345,38 @@ export default function SocMapperPage() {
             setPollingInterval(null)
           }
 
-          setProcessingStatus(prev => ({
+          setProcessingStatus((prev) => ({
             ...prev,
             status: "failed",
-            error: statusData.error || "Processing failed"
+            error: statusData.error || "Processing failed",
           }))
 
           setCurrentJobId(null)
           toast.error(`SOC report processing failed: ${statusData.error || "Unknown error"}`)
         }
-        
-        // If still processing, continue polling (interval will handle the next call)
 
+        // If still processing, continue polling (interval will handle the next call)
       } catch (pollError) {
         console.error("Polling error:", pollError)
         consecutiveErrors++
-        
+
         // If we have too many consecutive errors, stop polling and show error
         if (consecutiveErrors >= maxConsecutiveErrors) {
           if (pollingInterval) {
             clearInterval(pollingInterval)
             setPollingInterval(null)
           }
-          
-          setProcessingStatus(prev => ({
+
+          setProcessingStatus((prev) => ({
             ...prev,
             status: "failed",
-            error: `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`
+            error: `Lost connection to server: ${pollError instanceof Error ? pollError.message : "Unknown error"}`,
           }))
-          
+
           setCurrentJobId(null)
           toast.error("Lost connection to server. Please check your connection and try again.")
         }
-        
+
         // Don't stop polling on network errors unless we've had too many
         // The interval will retry automatically
       }
@@ -385,7 +397,7 @@ export default function SocMapperPage() {
       status: "uploading",
       progress: 10,
       fileName: file.name,
-      startTime: Date.now()
+      startTime: Date.now(),
     })
 
     const formData = new FormData()
@@ -411,30 +423,29 @@ export default function SocMapperPage() {
       }
 
       const startResult = await startResponse.json()
-      
+
       // Validate that we got a job ID
       if (!startResult.job_id) {
         throw new Error("Server did not return a job ID")
       }
-      
+
       const jobId = startResult.job_id
       setCurrentJobId(jobId)
 
-      setProcessingStatus(prev => ({ 
-        ...prev, 
-        status: "processing", 
-        progress: 20 
+      setProcessingStatus((prev) => ({
+        ...prev,
+        status: "processing",
+        progress: 20,
       }))
 
       // Start polling for job status
       startPolling(jobId)
-
     } catch (error) {
       console.error("Upload error:", error)
-      setProcessingStatus(prev => ({
+      setProcessingStatus((prev) => ({
         ...prev,
         status: "failed",
-        error: error instanceof Error ? error.message : "Upload failed"
+        error: error instanceof Error ? error.message : "Upload failed",
       }))
       toast.error(error instanceof Error ? error.message : "Failed to start SOC report processing")
     }
@@ -444,14 +455,14 @@ export default function SocMapperPage() {
     if (currentJobId && pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
-      
+
       try {
         // Clean up the job on the server
         await fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" })
       } catch (error) {
         console.warn("Failed to cancel job:", error)
       }
-      
+
       setCurrentJobId(null)
       setProcessingStatus({ status: "idle", progress: 0 })
       toast.info("Processing cancelled")
@@ -463,8 +474,8 @@ export default function SocMapperPage() {
 
     // Create workbook
     const workbook = XLSX.utils.book_new()
-    
-    excelData.sheets.forEach(sheet => {
+
+    excelData.sheets.forEach((sheet) => {
       const worksheet = XLSX.utils.aoa_to_sheet(sheet.data)
       XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name)
     })
@@ -473,19 +484,47 @@ export default function SocMapperPage() {
     XLSX.writeFile(workbook, excelData.fileName)
   }
 
+  const downloadReport = async () => {
+    if (!currentJobId) return
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/download-report/${currentJobId}`)
+
+      if (!response.ok) {
+        throw new Error(`Failed to download report: ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.style.display = "none"
+      a.href = url
+      a.download = `soc_compliance_report_${Date.now()}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      toast.success("Report downloaded successfully!")
+    } catch (error) {
+      console.error("Download error:", error)
+      toast.error("Failed to download report")
+    }
+  }
+
   const resetProcessing = () => {
     // Clean up polling if active
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
     }
-    
+
     // Clean up job if exists
     if (currentJobId) {
       fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" }).catch(console.warn)
       setCurrentJobId(null)
     }
-    
+
     setProcessingStatus({ status: "idle", progress: 0 })
     setProcessingResult(null)
     setExcelData(null)
@@ -542,7 +581,9 @@ export default function SocMapperPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">SOC Mapper</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Map SOC2 Type2 reports against CIS framework with enhanced LLM analysis</p>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          Map SOC2 Type2 reports against CIS framework with enhanced LLM analysis
+        </p>
       </div>
 
       {processingStatus.status === "idle" ? (
@@ -553,7 +594,8 @@ export default function SocMapperPage() {
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
-              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework with enhanced LLM analysis for conceptual overlap assessment
+              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework with
+              enhanced LLM analysis for conceptual overlap assessment
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -614,7 +656,7 @@ export default function SocMapperPage() {
               Processing SOC Report
             </CardTitle>
             <CardDescription>
-              {processingStatus.fileName} 
+              {processingStatus.fileName}
               {processingStatus.startTime && ` • Started ${formatDuration(processingStatus.startTime)}`}
               {processingStatus.completedAt &&
                 ` • Completed in ${formatDuration(processingStatus.startTime!, processingStatus.completedAt)}`}
@@ -635,25 +677,25 @@ export default function SocMapperPage() {
                   <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">
                     <p className="font-medium text-blue-900 dark:text-blue-100">Controls Found</p>
                     <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                      {processingResult.parser_results.text_chunks_count}
+                      {processingResult.parser_results?.text_chunks_count || 0}
                     </p>
                   </div>
                   <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-lg">
                     <p className="font-medium text-green-900 dark:text-green-100">RAG Matches</p>
                     <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      {processingResult.rag_results.matches_count}
+                      {processingResult.rag_results?.matches_count || 0}
                     </p>
                   </div>
                   <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg">
                     <p className="font-medium text-purple-900 dark:text-purple-100">LLM Enhanced</p>
                     <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                      {processingResult.llm_analysis.enhanced_matches_count}
+                      {processingResult.llm_analysis?.enhanced_matches_count || 0}
                     </p>
                   </div>
                   <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
                     <p className="font-medium text-orange-900 dark:text-orange-100">Text Length</p>
                     <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                      {Math.round(processingResult.parser_results.extracted_text_length / 1000)}K
+                      {Math.round((processingResult.parser_results?.extracted_text_length || 0) / 1000)}K
                     </p>
                   </div>
                 </div>
@@ -663,6 +705,10 @@ export default function SocMapperPage() {
                   <Button variant="outline" onClick={downloadExcel}>
                     <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
                     Download Excel
+                  </Button>
+                  <Button variant="outline" onClick={downloadReport}>
+                    <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                    Download Report
                   </Button>
                   <Button variant="outline" onClick={resetProcessing}>
                     Start New Mapping
@@ -688,21 +734,26 @@ export default function SocMapperPage() {
                   <p>• Enhancing with LLM conceptual overlap analysis</p>
                   <p>• Processing running in background - safe to wait</p>
                 </div>
-                
+
                 <div className="flex gap-3">
                   <Button variant="outline" size="sm" onClick={cancelProcessing}>
                     <StopIcon className="h-4 w-4 mr-2" />
                     Cancel Processing
                   </Button>
                 </div>
-                
+
                 <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <p className="font-medium mb-1">Enhanced analysis process:</p>
-                  <p>This process includes both RAG matching and LLM conceptual overlap analysis, which can take up to 2 hours depending on document size and complexity. 
-                  The system polls the server every 5 seconds for updates. You can safely close this 
-                  window and return later - the process will continue running on the server.</p>
+                  <p>
+                    This process includes both RAG matching and LLM conceptual overlap analysis, which can take up to 2
+                    hours depending on document size and complexity. The system polls the server every 5 seconds for
+                    updates. You can safely close this window and return later - the process will continue running on
+                    the server.
+                  </p>
                   {currentJobId && (
-                    <p className="mt-1">Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code></p>
+                    <p className="mt-1">
+                      Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code>
+                    </p>
                   )}
                 </div>
               </div>
