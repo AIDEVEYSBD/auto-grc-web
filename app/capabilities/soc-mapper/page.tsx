@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useCallback, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   ChartBarIcon,
   CloudArrowUpIcon,
@@ -11,16 +10,36 @@ import {
   ArrowDownTrayIcon,
   XMarkIcon,
   StopIcon,
+  SignalIcon,
 } from "@heroicons/react/24/outline"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import * as XLSX from "xlsx"
+
+const API_BASE_URL = "https://soc.autogrc.cloud"
+
+interface HeartbeatMessage {
+  timestamp: string
+  progress: number
+  status: string
+  message: string
+  jobId: string
+}
+
+interface JobStatus {
+  job_id: string
+  status: "processing" | "completed" | "failed"
+  progress: number
+  status_message: string
+  filename?: string
+  created_at?: string
+  updated_at?: string
+  result?: any
+  error?: string
+}
 
 interface ProcessingStatus {
   status: "idle" | "uploading" | "processing" | "completed" | "failed"
@@ -97,133 +116,125 @@ interface ExcelData {
   fileName: string
 }
 
-// Change this to your server URL
-const API_BASE_URL = "https://soc.autogrc.cloud"
-
 export default function SocMapperPage() {
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
-    status: "idle",
-    progress: 0,
-  })
-  const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null)
-  const [showResultModal, setShowResultModal] = useState(false)
-  const [excelData, setExcelData] = useState<ExcelData | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
-  const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now())
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
+  const [heartbeatMessages, setHeartbeatMessages] = useState<HeartbeatMessage[]>([])
+  const [isPolling, setIsPolling] = useState(false)
+  const [showResultModal, setShowResultModal] = useState(false)
+  const [lastHeartbeat, setLastHeartbeat] = useState<Date | null>(null)
 
-  const convertResultToExcel = useCallback((result: ProcessingResult): ExcelData => {
-    const sheets: ExcelSheet[] = []
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const heartbeatLogRef = useRef<HTMLDivElement>(null)
 
-    // Sheet 1: LLM Enhanced Analysis Results (Primary Results)
-    if (result.llm_analysis?.enhanced_matches && result.llm_analysis.enhanced_matches.length > 0) {
-      const enhancedData = [
-        [
-          "RAG Rank",
-          "CIS Control ID",
-          "CIS Control Text",
-          "SOC Control ID",
-          "SOC Control Text",
-          "Equivalence Type",
-          "Confidence Score",
-          "Mapping Justification",
-          "Overlapping Concepts",
-          "Distinct Concepts",
-          "Conceptual Strength",
-          "LLM Audit Notes",
-        ],
-      ]
+  // Auto-scroll heartbeat log to bottom
+  useEffect(() => {
+    if (heartbeatLogRef.current) {
+      heartbeatLogRef.current.scrollTop = heartbeatLogRef.current.scrollHeight
+    }
+  }, [heartbeatMessages])
 
-      result.llm_analysis.enhanced_matches.forEach((match) => {
-        enhancedData.push([
-          match.rag_rank || match.rank || "",
-          match.source_id || "",
-          match.source_text?.substring(0, 200) + (match.source_text?.length > 200 ? "..." : "") || "",
-          match.target_id || "",
-          match.target_text?.substring(0, 200) + (match.target_text?.length > 200 ? "..." : "") || "",
-          match.equivalence_type || "",
-          match.confidence_score || "",
-          match.mapping_justification || "",
-          match.overlapping_concepts || "",
-          match.distinct_concepts || "",
-          match.conceptual_strength || "",
-          match.llm_audit_notes || "",
-        ])
-      })
-
-      sheets.push({
-        name: "LLM Enhanced Analysis",
-        data: enhancedData,
-      })
+  const addHeartbeatMessage = (message: string, progress: number, status: string) => {
+    const heartbeat: HeartbeatMessage = {
+      timestamp: new Date().toLocaleTimeString(),
+      progress,
+      status,
+      message,
+      jobId: currentJobId || "unknown",
     }
 
-    // Sheet 2: RAG Mapping Results (Original RAG Results)
-    if (result.rag_results?.matches && result.rag_results.matches.length > 0) {
-      const mappingData = [["Rank", "CIS Control ID", "CIS Control Text", "SOC Control ID", "SOC Control Text"]]
+    setHeartbeatMessages((prev) => [...prev.slice(-19), heartbeat]) // Keep last 20 messages
+    setLastHeartbeat(new Date())
 
-      result.rag_results.matches.forEach((match) => {
-        mappingData.push([
-          match.rank || "",
-          match.source_id || "",
-          match.source_text?.substring(0, 200) + (match.source_text?.length > 200 ? "..." : "") || "",
-          match.target_id || "",
-          match.target_text?.substring(0, 200) + (match.target_text?.length > 200 ? "..." : "") || "",
-        ])
-      })
+    console.log(`[${heartbeat.timestamp}] ${heartbeat.message} (${heartbeat.progress}%)`)
+  }
 
-      sheets.push({
-        name: "RAG Mapping Results",
-        data: mappingData,
-      })
+  const startPolling = (jobId: string) => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
     }
 
-    // Sheet 3: Extracted SOC Controls
-    if (result.parser_results?.text_chunks && result.parser_results.text_chunks.length > 0) {
-      const chunksData = [["Control ID", "Control Content"]]
+    setIsPolling(true)
+    addHeartbeatMessage("Starting job monitoring...", 0, "processing")
 
-      result.parser_results.text_chunks.forEach((chunk) => {
-        chunksData.push([chunk["Control ID"] || "", chunk["Content"] || ""])
-      })
+    const pollJobStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/job-status/${jobId}`)
 
-      sheets.push({
-        name: "Extracted SOC Controls",
-        data: chunksData,
-      })
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error("Job not found on server")
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const statusData: JobStatus = await response.json()
+        setJobStatus(statusData)
+
+        // Add heartbeat message with actual server data
+        addHeartbeatMessage(
+          statusData.status_message || `Job ${statusData.status}`,
+          statusData.progress || 0,
+          statusData.status,
+        )
+
+        if (statusData.status === "completed") {
+          setIsPolling(false)
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+
+          addHeartbeatMessage("✅ Processing completed successfully!", 100, "completed")
+          toast.success("SOC mapping completed successfully!")
+
+          // Clean up job on server
+          try {
+            await fetch(`${API_BASE_URL}/job/${jobId}`, { method: "DELETE" })
+          } catch (cleanupError) {
+            console.warn("Failed to cleanup job:", cleanupError)
+          }
+        } else if (statusData.status === "failed") {
+          setIsPolling(false)
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+
+          addHeartbeatMessage(
+            `❌ Processing failed: ${statusData.error || "Unknown error"}`,
+            statusData.progress || 0,
+            "failed",
+          )
+          toast.error(`Processing failed: ${statusData.error || "Unknown error"}`)
+        }
+      } catch (error) {
+        console.error("Polling error:", error)
+        addHeartbeatMessage(
+          `⚠️ Connection issue: ${error instanceof Error ? error.message : "Network error"}`,
+          jobStatus?.progress || 0,
+          "processing",
+        )
+        // Don't stop polling on network errors - continue trying
+      }
     }
 
-    // Sheet 4: Processing Summary
-    const summaryData = [
-      ["Metric", "Value"],
-      ["Filename", result.filename || ""],
-      [
-        "Pages Processed",
-        `${result.processing_config?.start_page || ""} - ${result.processing_config?.end_page || ""}`,
-      ],
-      ["Regex Pattern", result.processing_config?.sample_control_id || ""],
-      ["Extracted Text Length", result.parser_results?.extracted_text_length || 0],
-      ["Text Chunks Found", result.parser_results?.text_chunks_count || 0],
-      ["Tables Found", result.parser_results?.tables_count || 0],
-      ["RAG Status", result.rag_results?.status || ""],
-      ["RAG Matches", result.rag_results?.matches_count || 0],
-      ["LLM Analysis Status", result.llm_analysis?.status || ""],
-      ["LLM Enhanced Matches", result.llm_analysis?.enhanced_matches_count || 0],
-      ["LLM Model Used", result.llm_analysis?.model_used || "N/A"],
-      ["Source Framework", result.rag_results?.source_framework || "N/A"],
-      ["Top K Matches", result.rag_results?.top_k || "N/A"],
-    ]
+    // Start immediate poll
+    pollJobStatus()
 
-    sheets.push({
-      name: "Processing Summary",
-      data: summaryData,
-    })
+    // Set up interval polling every 3 seconds
+    pollingIntervalRef.current = setInterval(pollJobStatus, 3000)
+  }
 
-    return {
-      sheets,
-      fileName: (result.filename || "soc_report").replace(".pdf", "_enhanced_soc_mapping.xlsx"),
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
     }
-  }, [])
+    setIsPolling(false)
+  }
 
   const handleFileSelect = (selectedFile: File) => {
     if (selectedFile.type !== "application/pdf") {
@@ -232,7 +243,6 @@ export default function SocMapperPage() {
     }
 
     if (selectedFile.size > 50 * 1024 * 1024) {
-      // 50MB limit
       toast.error("File size must be less than 50MB")
       return
     }
@@ -267,261 +277,92 @@ export default function SocMapperPage() {
     }
   }
 
-  const startPolling = (jobId: string) => {
-    // Reset heartbeat tracking
-    setLastHeartbeat(Date.now())
-
-    const pollJobStatus = async () => {
-      try {
-        console.log(`Polling job status for ${jobId}...`)
-
-        const statusResponse = await fetch(`${API_BASE_URL}/job-status/${jobId}`, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          // Remove any timeout configurations - let it wait as long as needed
-        })
-
-        if (!statusResponse.ok) {
-          if (statusResponse.status === 404) {
-            throw new Error("Job not found on server")
-          }
-          throw new Error(`HTTP ${statusResponse.status}: ${statusResponse.statusText}`)
-        }
-
-        const statusData = await statusResponse.json()
-        console.log(`Job ${jobId} status:`, statusData)
-
-        // Update heartbeat timestamp - we got a response
-        setLastHeartbeat(Date.now())
-
-        // Update progress and status message from the API response
-        setProcessingStatus((prev) => ({
-          ...prev,
-          progress: statusData.progress || prev.progress,
-          statusMessage: statusData.status_message || statusData.statusMessage || prev.statusMessage,
-          status:
-            statusData.status === "completed" ? "completed" : statusData.status === "failed" ? "failed" : "processing",
-        }))
-
-        if (statusData.status === "completed") {
-          // Job completed successfully
-          console.log(`Job ${jobId} completed successfully`)
-
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
-
-          setProcessingStatus((prev) => ({
-            ...prev,
-            status: "completed",
-            progress: 100,
-            completedAt: Date.now(),
-            statusMessage: "Processing completed successfully!",
-          }))
-
-          // Set the result
-          setProcessingResult(statusData.result)
-
-          // Convert result to Excel format
-          const excelData = convertResultToExcel(statusData.result)
-          setExcelData(excelData)
-
-          setFile(null)
-
-          if (
-            statusData.result?.rag_results?.status === "completed" &&
-            statusData.result?.llm_analysis?.status === "completed"
-          ) {
-            toast.success("SOC mapping and LLM analysis completed successfully!")
-          } else if (statusData.result?.rag_results?.status === "completed") {
-            toast.warning(
-              `RAG mapping completed but LLM analysis: ${statusData.result?.llm_analysis?.status || "unknown"}`,
-            )
-          } else {
-            toast.warning(
-              `Processing completed but RAG matching: ${statusData.result?.rag_results?.status || "unknown"}`,
-            )
-          }
-
-          // Clean up the job on the server
-          try {
-            await fetch(`${API_BASE_URL}/job/${jobId}`, { method: "DELETE" })
-          } catch (cleanupError) {
-            console.warn("Failed to cleanup job:", cleanupError)
-          }
-
-          // Clear the current job ID
-          setCurrentJobId(null)
-        } else if (statusData.status === "failed") {
-          // Job failed
-          console.error(`Job ${jobId} failed:`, statusData.error)
-
-          if (pollingInterval) {
-            clearInterval(pollingInterval)
-            setPollingInterval(null)
-          }
-
-          setProcessingStatus((prev) => ({
-            ...prev,
-            status: "failed",
-            error: statusData.error || "Processing failed",
-            statusMessage: `Processing failed: ${statusData.error || "Unknown error"}`,
-          }))
-
-          setCurrentJobId(null)
-          toast.error(`SOC report processing failed: ${statusData.error || "Unknown error"}`)
-        }
-
-        // If still processing, the interval will continue polling automatically
-      } catch (pollError) {
-        console.error("Polling error:", pollError)
-
-        // Don't treat network errors as job failures
-        // Just log them and continue polling
-        // The server heartbeat system will handle actual job failures
-
-        // Only update the status message to indicate connection issues
-        // but don't fail the job
-        setProcessingStatus((prev) => ({
-          ...prev,
-          statusMessage: `Connection issue: ${pollError instanceof Error ? pollError.message : "Network error"} - Retrying...`,
-        }))
-
-        // Continue polling - don't stop on network errors
-        // The job might still be running on the server
-      }
-    }
-
-    // Start immediate poll
-    pollJobStatus()
-
-    // Set up interval polling every 3 seconds (more frequent for better responsiveness)
-    const interval = setInterval(pollJobStatus, 3000)
-    setPollingInterval(interval)
-  }
-
   const uploadFile = async () => {
     if (!file) return
 
-    setProcessingStatus({
-      status: "uploading",
-      progress: 5,
-      fileName: file.name,
-      startTime: Date.now(),
-      statusMessage: "Uploading file and starting processing...",
-    })
+    // Reset state
+    setHeartbeatMessages([])
+    setJobStatus(null)
+    setCurrentJobId(null)
 
     const formData = new FormData()
     formData.append("file", file)
 
     try {
-      console.log("Starting file upload...")
+      addHeartbeatMessage("📤 Uploading file to server...", 5, "uploading")
 
-      // Start the processing job
-      const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
+      const response = await fetch(`${API_BASE_URL}/start-processing`, {
         method: "POST",
         body: formData,
-        // Remove timeout - let it take as long as needed
       })
 
-      if (!startResponse.ok) {
+      if (!response.ok) {
         let errorMessage = "Failed to start processing"
         try {
-          const errorData = await startResponse.json()
+          const errorData = await response.json()
           errorMessage = errorData.detail || errorMessage
         } catch {
-          // If we can't parse the error response, use the status text
-          errorMessage = `HTTP ${startResponse.status}: ${startResponse.statusText}`
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`
         }
         throw new Error(errorMessage)
       }
 
-      const startResult = await startResponse.json()
-      console.log("Upload successful, job started:", startResult)
+      const result = await response.json()
 
-      // Validate that we got a job ID
-      if (!startResult.job_id) {
+      if (!result.job_id) {
         throw new Error("Server did not return a job ID")
       }
 
-      const jobId = startResult.job_id
+      const jobId = result.job_id
       setCurrentJobId(jobId)
 
-      setProcessingStatus((prev) => ({
-        ...prev,
-        status: "processing",
-        progress: 10,
-        statusMessage: "File uploaded successfully, processing started...",
-      }))
+      addHeartbeatMessage(`✅ File uploaded successfully! Job ID: ${jobId}`, 10, "processing")
 
-      // Start polling for job status
+      // Start polling for status updates
       startPolling(jobId)
     } catch (error) {
       console.error("Upload error:", error)
-      setProcessingStatus((prev) => ({
-        ...prev,
-        status: "failed",
-        error: error instanceof Error ? error.message : "Upload failed",
-        statusMessage: `Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      }))
-      toast.error(error instanceof Error ? error.message : "Failed to start SOC report processing")
+      addHeartbeatMessage(`❌ Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`, 0, "failed")
+      toast.error(error instanceof Error ? error.message : "Failed to start processing")
     }
   }
 
   const cancelProcessing = async () => {
-    if (currentJobId && pollingInterval) {
-      console.log(`Cancelling job ${currentJobId}`)
-
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-
+    if (currentJobId) {
       try {
-        // Clean up the job on the server
         await fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" })
-        console.log(`Job ${currentJobId} cancelled successfully`)
+        addHeartbeatMessage("🛑 Processing cancelled by user", jobStatus?.progress || 0, "cancelled")
       } catch (error) {
         console.warn("Failed to cancel job:", error)
       }
-
-      setCurrentJobId(null)
-      setProcessingStatus({ status: "idle", progress: 0 })
-      toast.info("Processing cancelled")
     }
+
+    stopPolling()
+    resetState()
+    toast.info("Processing cancelled")
   }
 
-  const downloadExcel = () => {
-    if (!excelData) return
-
-    // Create workbook
-    const workbook = XLSX.utils.book_new()
-
-    excelData.sheets.forEach((sheet) => {
-      const worksheet = XLSX.utils.aoa_to_sheet(sheet.data)
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name)
-    })
-
-    // Download
-    XLSX.writeFile(workbook, excelData.fileName)
+  const resetState = () => {
+    stopPolling()
+    setFile(null)
+    setCurrentJobId(null)
+    setJobStatus(null)
+    setHeartbeatMessages([])
+    setShowResultModal(false)
+    setLastHeartbeat(null)
   }
 
   const downloadReport = async () => {
     if (!currentJobId) {
-      // If no current job ID but we have a completed result, try to download anyway
-      toast.error("No active job to download report from")
+      toast.error("No job available for download")
       return
     }
 
     try {
-      console.log(`Downloading report for job ${currentJobId}`)
-
       const response = await fetch(`${API_BASE_URL}/download-report/${currentJobId}`)
 
       if (!response.ok) {
-        throw new Error(`Failed to download report: ${response.statusText}`)
+        throw new Error(`Failed to download: ${response.statusText}`)
       }
 
       const blob = await response.blob()
@@ -542,79 +383,33 @@ export default function SocMapperPage() {
     }
   }
 
-  const resetProcessing = () => {
-    console.log("Resetting processing state")
-
-    // Clean up polling if active
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
-
-    // Clean up job if exists
-    if (currentJobId) {
-      fetch(`${API_BASE_URL}/job/${currentJobId}`, { method: "DELETE" }).catch(console.warn)
-      setCurrentJobId(null)
-    }
-
-    setProcessingStatus({ status: "idle", progress: 0 })
-    setProcessingResult(null)
-    setExcelData(null)
-    setShowResultModal(false)
-    setLastHeartbeat(Date.now())
-  }
-
-  // Cleanup on component unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      // Cleanup polling interval on component unmount
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
       }
     }
-  }, [pollingInterval])
+  }, [])
 
   const getStatusIcon = () => {
-    switch (processingStatus.status) {
+    if (!jobStatus) return null
+
+    switch (jobStatus.status) {
       case "completed":
         return <CheckCircleIcon className="h-6 w-6 text-green-500" />
       case "failed":
         return <ExclamationCircleIcon className="h-6 w-6 text-red-500" />
-      case "uploading":
       case "processing":
         return <div className="h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
       default:
-        return null
+        return <SignalIcon className="h-6 w-6 text-blue-500" />
     }
   }
 
-  const getStatusText = () => {
-    // Use the status message from the API if available
-    if (processingStatus.statusMessage) {
-      return processingStatus.statusMessage
-    }
-
-    // Fallback to default messages
-    switch (processingStatus.status) {
-      case "uploading":
-        return "Starting SOC report processing..."
-      case "processing":
-        return "Processing and mapping controls..."
-      case "completed":
-        return "Processing completed successfully!"
-      case "failed":
-        return processingStatus.error || "Processing failed"
-      default:
-        return ""
-    }
-  }
-
-  const formatDuration = (startTime: number, endTime?: number) => {
-    const duration = (endTime || Date.now()) - startTime
-    const minutes = Math.floor(duration / 60000)
-    const seconds = Math.floor((duration % 60000) / 1000)
-    return `${minutes}m ${seconds}s`
-  }
+  const isProcessing = jobStatus?.status === "processing" || isPolling
+  const isCompleted = jobStatus?.status === "completed"
+  const isFailed = jobStatus?.status === "failed"
 
   return (
     <div className="space-y-6">
@@ -625,16 +420,16 @@ export default function SocMapperPage() {
         </p>
       </div>
 
-      {processingStatus.status === "idle" ? (
-        <Card className="glass-card">
+      {/* Upload Section */}
+      {!currentJobId && (
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ChartBarIcon className="h-5 w-5 text-blue-600" />
               Upload SOC2 Type 2 Report
             </CardTitle>
             <CardDescription>
-              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework with
-              enhanced LLM analysis for conceptual overlap assessment
+              Upload your SOC2 Type 2 audit report in PDF format to automatically map controls to CIS framework
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -680,131 +475,8 @@ export default function SocMapperPage() {
                     Remove
                   </Button>
                   <Button onClick={uploadFile} size="sm">
-                    Start Mapping
+                    Start Processing
                   </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {getStatusIcon()}
-              Processing SOC Report
-            </CardTitle>
-            <CardDescription>
-              {processingStatus.fileName}
-              {processingStatus.startTime && ` • Started ${formatDuration(processingStatus.startTime)}`}
-              {processingStatus.completedAt &&
-                ` • Completed in ${formatDuration(processingStatus.startTime!, processingStatus.completedAt)}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="flex-1 pr-4">{getStatusText()}</span>
-                <span className="font-medium">{processingStatus.progress}%</span>
-              </div>
-              <Progress value={processingStatus.progress} className="w-full" />
-            </div>
-
-            {processingStatus.status === "completed" && processingResult && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">
-                    <p className="font-medium text-blue-900 dark:text-blue-100">Controls Found</p>
-                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                      {processingResult.parser_results?.text_chunks_count || 0}
-                    </p>
-                  </div>
-                  <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-lg">
-                    <p className="font-medium text-green-900 dark:text-green-100">RAG Matches</p>
-                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      {processingResult.rag_results?.matches_count || 0}
-                    </p>
-                  </div>
-                  <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg">
-                    <p className="font-medium text-purple-900 dark:text-purple-100">LLM Enhanced</p>
-                    <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                      {processingResult.llm_analysis?.enhanced_matches_count || 0}
-                    </p>
-                  </div>
-                  <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
-                    <p className="font-medium text-orange-900 dark:text-orange-100">Text Length</p>
-                    <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                      {Math.round((processingResult.parser_results?.extracted_text_length || 0) / 1000)}K
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button onClick={() => setShowResultModal(true)}>View Results</Button>
-                  <Button variant="outline" onClick={downloadExcel}>
-                    <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                    Download Excel
-                  </Button>
-                  <Button variant="outline" onClick={downloadReport}>
-                    <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                    Download Report
-                  </Button>
-                  <Button variant="outline" onClick={resetProcessing}>
-                    Start New Mapping
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {processingStatus.status === "failed" && (
-              <div className="space-y-4">
-                <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
-                  <p className="text-red-800 dark:text-red-200 font-medium">Processing Failed</p>
-                  <p className="text-red-600 dark:text-red-400 text-sm mt-1">
-                    {processingStatus.error || "An unknown error occurred"}
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={resetProcessing}>
-                    Try Again
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {(processingStatus.status === "uploading" || processingStatus.status === "processing") && (
-              <div className="space-y-4">
-                <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                  <p>• Extracting controls from SOC report (pages 36-81)</p>
-                  <p>• Generating regex patterns for chunking</p>
-                  <p>• Running RAG matching against CIS framework</p>
-                  <p>• Enhancing with LLM conceptual overlap analysis</p>
-                  <p>• Processing running in background - safe to wait</p>
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" size="sm" onClick={cancelProcessing}>
-                    <StopIcon className="h-4 w-4 mr-2" />
-                    Cancel Processing
-                  </Button>
-                </div>
-
-                <div className="text-xs text-gray-500 dark:text-gray-400 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <p className="font-medium mb-1">Enhanced analysis process:</p>
-                  <p>
-                    This process includes both RAG matching and LLM conceptual overlap analysis, which can take up to 2
-                    hours depending on document size and complexity. The system polls the server every 3 seconds for
-                    updates and will continue as long as the server is responding. You can safely close this window and
-                    return later - the process will continue running on the server.
-                  </p>
-                  {currentJobId && (
-                    <p className="mt-2">
-                      Job ID: <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">{currentJobId}</code>
-                    </p>
-                  )}
-                  <p className="mt-1 text-green-600 dark:text-green-400">
-                    ✓ Server connection active - receiving heartbeat updates
-                  </p>
                 </div>
               </div>
             )}
@@ -812,77 +484,168 @@ export default function SocMapperPage() {
         </Card>
       )}
 
+      {/* Processing Section */}
+      {currentJobId && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Status Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {getStatusIcon()}
+                Processing Status
+              </CardTitle>
+              <CardDescription>
+                Job ID: {currentJobId}
+                {lastHeartbeat && (
+                  <span className="ml-2 text-green-600">• Last update: {lastHeartbeat.toLocaleTimeString()}</span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Progress Bar */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Progress</span>
+                  <span className="font-medium">{jobStatus?.progress || 0}%</span>
+                </div>
+                <Progress value={jobStatus?.progress || 0} className="w-full" />
+              </div>
+
+              {/* Current Status */}
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Current Status:</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  {jobStatus?.status_message || "Waiting for updates..."}
+                </p>
+              </div>
+
+              {/* Connection Status */}
+              <div className="flex items-center gap-2 text-sm">
+                <div className={`w-2 h-2 rounded-full ${isPolling ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
+                <span className={isPolling ? "text-green-600" : "text-gray-500"}>
+                  {isPolling ? "Connected - receiving updates" : "Disconnected"}
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                {isProcessing && (
+                  <Button variant="outline" size="sm" onClick={cancelProcessing}>
+                    <StopIcon className="h-4 w-4 mr-2" />
+                    Cancel
+                  </Button>
+                )}
+
+                {isCompleted && (
+                  <>
+                    <Button onClick={() => setShowResultModal(true)} size="sm">
+                      View Results
+                    </Button>
+                    <Button variant="outline" onClick={downloadReport} size="sm">
+                      <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                      Download Report
+                    </Button>
+                  </>
+                )}
+
+                {(isCompleted || isFailed) && (
+                  <Button variant="outline" onClick={resetState} size="sm">
+                    Start New Job
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Live Heartbeat Log */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <SignalIcon className="h-5 w-5 text-green-600" />
+                Live Heartbeat Monitor
+              </CardTitle>
+              <CardDescription>Real-time updates from the processing server</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div
+                ref={heartbeatLogRef}
+                className="h-80 overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-lg p-3 font-mono text-xs space-y-1"
+              >
+                {heartbeatMessages.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">No heartbeat messages yet...</p>
+                ) : (
+                  heartbeatMessages.map((msg, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <Badge
+                        variant={
+                          msg.status === "completed" ? "default" : msg.status === "failed" ? "destructive" : "secondary"
+                        }
+                        className="text-xs px-1 py-0 min-w-fit"
+                      >
+                        {msg.progress}%
+                      </Badge>
+                      <span className="text-gray-500 min-w-fit">[{msg.timestamp}]</span>
+                      <span className="text-gray-900 dark:text-gray-100 break-words">{msg.message}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Results Modal */}
       <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
-        <DialogContent className="max-w-6xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
             <div className="flex items-center justify-between">
-              <DialogTitle>SOC Mapping Results</DialogTitle>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={downloadExcel}>
-                  <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                  Download Excel
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowResultModal(false)}>
-                  <XMarkIcon className="h-4 w-4" />
-                </Button>
-              </div>
+              <DialogTitle>Processing Results</DialogTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowResultModal(false)}>
+                <XMarkIcon className="h-4 w-4" />
+              </Button>
             </div>
           </DialogHeader>
 
-          {excelData && (
-            <div className="overflow-hidden">
-              <Tabs defaultValue={excelData.sheets[0]?.name} className="w-full">
-                <TabsList className="grid w-full grid-cols-auto overflow-x-auto">
-                  {excelData.sheets.map((sheet) => (
-                    <TabsTrigger key={sheet.name} value={sheet.name} className="whitespace-nowrap">
-                      {sheet.name}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+          <div className="space-y-4">
+            {jobStatus?.result ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">
+                  <p className="font-medium text-blue-900 dark:text-blue-100">Controls Found</p>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    {jobStatus.result.parser_results?.text_chunks_count || 0}
+                  </p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-lg">
+                  <p className="font-medium text-green-900 dark:text-green-100">RAG Matches</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    {jobStatus.result.rag_results?.matches_count || 0}
+                  </p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg">
+                  <p className="font-medium text-purple-900 dark:text-purple-100">LLM Enhanced</p>
+                  <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                    {jobStatus.result.llm_analysis?.enhanced_matches_count || 0}
+                  </p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
+                  <p className="font-medium text-orange-900 dark:text-orange-100">Text Length</p>
+                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                    {Math.round((jobStatus.result.parser_results?.extracted_text_length || 0) / 1000)}K
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-gray-500 py-8">No results available</p>
+            )}
 
-                {excelData.sheets.map((sheet) => (
-                  <TabsContent key={sheet.name} value={sheet.name} className="mt-4">
-                    <div className="border rounded-lg overflow-auto max-h-96">
-                      <Table>
-                        <TableHeader>
-                          {sheet.data[0] && (
-                            <TableRow>
-                              {sheet.data[0].map((header: any, index: number) => (
-                                <TableHead key={index} className="whitespace-nowrap">
-                                  {header}
-                                </TableHead>
-                              ))}
-                            </TableRow>
-                          )}
-                        </TableHeader>
-                        <TableBody>
-                          {sheet.data.slice(1).map((row: any[], rowIndex: number) => (
-                            <TableRow key={rowIndex}>
-                              {row.map((cell: any, cellIndex: number) => (
-                                <TableCell key={cellIndex} className="whitespace-nowrap">
-                                  {typeof cell === "string" && cell.length > 50 ? (
-                                    <span title={cell}>{cell.substring(0, 50)}...</span>
-                                  ) : (
-                                    cell
-                                  )}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    <div className="mt-4 flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-                      <Badge variant="secondary">{sheet.data.length - 1} rows</Badge>
-                      <Badge variant="secondary">{sheet.data[0]?.length || 0} columns</Badge>
-                    </div>
-                  </TabsContent>
-                ))}
-              </Tabs>
+            <div className="flex gap-2 justify-end">
+              <Button onClick={downloadReport}>
+                <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                Download Full Report
+              </Button>
             </div>
-          )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
